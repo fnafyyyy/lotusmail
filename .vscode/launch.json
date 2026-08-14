@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    
+    {
+      // Debugowanie rdzenia w Rust. Łańcuch narzędzi to MSVC, więc używamy
+      // debuggera z rozszerzenia C/C++ (cppvsdbg) - rozumie symbole PDB
+      // wytwarzane przez ten łańcuch bez żadnej konfiguracji.
+      //
+      // Zadanie przygotowawcze podnosi serwer frontendu i buduje rdzeń;
+      // tutaj tylko uruchamiamy gotowy plik.
+      "name": "LotusMail: rdzeń (Rust)",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/src-tauri/target/debug/LotusMail.exe",
+      "cwd": "${workspaceFolder}/src-tauri",
+      "preLaunchTask": "tauri:debug-prepare",
+      "console": "integratedTerminal",
+      "environment": [
+        // Pełny ślad stosu przy panice - w kliencie poczty panika w wątku
+        // synchronizacji bywa jedynym śladem po błędzie.
+        { "name": "RUST_BACKTRACE", "value": "1" }
+      ]
+    },
+    {
+      // Debugowanie interfejsu. Podpina się do WebView2 uruchomionego przez
+      // konfigurację powyżej - punkty przerwania stawiasz wprost w plikach
+      // .svelte i .ts, bez grzebania w kodzie wynikowym.
+      "name": "LotusMail: interfejs (WebView2)",
+      "type": "msedge",
+      "request": "attach",
+      "port": 9222,
+      "webRoot": "${workspaceFolder}/src",
+      "sourceMaps": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "LotusMail: wszystko",
+      "configurations": ["LotusMail: rdzeń (Rust)", "LotusMail: interfejs (WebView2)"],
+      "stopAll": true
+    }
+  ]
+}

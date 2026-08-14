@@ -1,0 +1,247 @@
+@import "tailwindcss";
+
+/* Paleta „lotos" - panele unoszące się nad płaszczyzną. Tokeny to zwykłe
+   zmienne CSS, więc przełączenie klasy .dark na <html> działa w locie. */
+:root {
+  --paper: #e9eef1; /* płaszczyzna pod panelami */
+  --surface: #ffffff; /* panel */
+  --rail: #f4f7f8; /* wypełnienie wtórne (chipy, załączniki) */
+  --line: #eef2f4;
+  --ink: #132028;
+  --ink-soft: #3b4a54;
+  --muted: #8fa0aa;
+  --accent: #0d5f6e;
+  --accent-soft: #e6f0f2;
+  --on-accent: #ffffff;
+  --flag: #c9647a; /* róż z serca kwiatu */
+  --danger: #b91c1c;
+  --scrollbar: #c3ccd4;
+  --panel-shadow: 0 2px 8px rgba(19, 32, 40, 0.08);
+  --chip-shadow: 0 1px 2px rgba(19, 32, 40, 0.07);
+}
+
+.dark {
+  --paper: #0c1216;
+  --surface: #141d22;
+  --rail: #1c272d;
+  --line: #1e2a31;
+  --ink: #f0f5f7;
+  --ink-soft: #b9c8d1;
+  --muted: #677b87;
+  --accent: #2f9d92;
+  --accent-soft: #17262a;
+  --on-accent: #04211e;
+  --flag: #e08398;
+  --danger: #ef4444;
+  --scrollbar: #33404b;
+  --panel-shadow: none;
+  --chip-shadow: none;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-rail: var(--rail);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-flag: var(--flag);
+  --color-danger: var(--danger);
+
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", monospace;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Nagłówki i marka - ciaśniejszy trakt liter, jak w makiecie 3a/3b */
+.tight {
+  letter-spacing: -0.025em;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Interfejs to nie dokument - elementy sterujące nie dają się zaznaczać.
+   Zaznaczanie zostaje tam, gdzie jest przydatne: w polach tekstowych,
+   edytorze wiadomości i w danych, które kopiuje się z nagłówka maila
+   (treść samej wiadomości jest w osobnej ramce, więc jej to nie dotyczy). */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"],
+.selectable,
+.selectable * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Panel: karta unosząca się nad płaszczyzną */
+.panel {
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--panel-shadow);
+  overflow: hidden;
+}
+
+/* Płynne przejście przy zmianie motywu */
+aside,
+section,
+header,
+main > * {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+/* Dotykowość przycisków: delikatne wciśnięcie + płynne kolory */
+button {
+  transition:
+    transform 0.08s ease,
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease,
+    box-shadow 0.15s ease;
+}
+button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+/* Pasek aktywności w nagłówku podczas synchronizacji */
+@keyframes busy-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+.busy-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 30%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: busy-slide 1.3s ease-in-out infinite;
+}
+
+/* Interfejs wyłania się spod ekranu powitalnego */
+@keyframes lm-app-in {
+  from {
+    opacity: 0.35;
+    transform: scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.app-in {
+  animation: lm-app-in 0.5s ease both;
+}
+
+/* Lista wiadomości: reflow zamknięty w tym kontenerze, żeby animacje
+   przenoszenia maili nie walczyły z renderowaniem treści w panelu obok. */
+.msg-list {
+  contain: layout paint;
+}
+
+/* Świadomie BEZ `content-visibility` na wierszach listy. Kusi, bo pomijanie
+   rysowania tego, czego nie widać, oszczędza pamięć - ale wiersz poza ekranem
+   traci wtedy rzeczywistą wysokość i wraca do wartości szacunkowej. Przy
+   kilkuset wierszach błąd się kumuluje, wysokość dokumentu skacze, a widok
+   przeskakuje na górę w trakcie przewijania. Sprawdzone na żywym folderze. */
+
+/* Podczas przeciągania maila iframe nie może połykać zdarzeń drag */
+.drag-active iframe {
+  pointer-events: none;
+}
+
+/* Uchwyt zmiany szerokości paneli - w przerwie między kartami */
+.resizer {
+  position: relative;
+  z-index: 5;
+  width: 12px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+}
+.resizer::after {
+  content: "";
+  position: absolute;
+  inset: 40% 5px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 0.15s ease;
+}
+.resizer:hover::after,
+.resizer.dragging::after {
+  background: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* Podkreślenia błędów pisowni. Rysowane przez CSS Custom Highlight API, więc
+   nie dotykają treści maila - w HTML-u wysyłanym na serwer nie ma po nich śladu. */
+::highlight(spell) {
+  text-decoration: underline wavy var(--danger);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
+/* WebView2 dokłada własny krzyżyk do input[type=search] - mamy swój, ten jest zbędny. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+/* iOS przybliża stronę, gdy dotkniesz pola o czcionce mniejszej niż 16 px -
+   i sam już z tego przybliżenia nie wraca. Efekt: formularz wychodzi poza
+   ekran, a treść wygląda na uciętą. Na ekranach dotykowych podnosimy więc
+   pola do 16 px. Świadomie nie blokujemy powiększania w meta viewport -
+   zabranie użytkownikowi możliwości zbliżenia to zła zamiana. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* macOS: pod oknem pracuje systemowe rozmycie (windowEffects w konfiguracji),
+   ale widać je wyłącznie przez półprzezroczyste tło. Zaokrąglenie rogów rysuje
+   sam system - własne `border-radius` tylko by się z nim gryzło. */
+.mac body {
+  background: transparent;
+}
+.mac .app-surface {
+  background: color-mix(in oklab, var(--paper) 86%, transparent);
+}

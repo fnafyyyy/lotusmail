@@ -1,0 +1,490 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		158F16BFDF7DACC08C2CB6CD /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FE44F47692D1167B0A7A891A /* QuartzCore.framework */; };
+		4C06FD25A3A11D4764477DC2 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EA7011FB28F22960B331236 /* libapp.a */; };
+		552C74056703EEE4FAD18494 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CDF2EE372CC894D0855DFD81 /* UIKit.framework */; };
+		583CF5A3C134AFEAAC3802BE /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 1179867CC2B47A9A1F608D08 /* LaunchScreen.storyboard */; };
+		7ADE489C1FC853AE772D45F7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 41EC5D7AF808C75BAB665960 /* Assets.xcassets */; };
+		A8A39354AC853A8F62560BBA /* assets in Resources */ = {isa = PBXBuildFile; fileRef = A3B7F26D92825307824262D9 /* assets */; };
+		B0A28374D9DE73BFC6F56829 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 86909E2BAE2722ABE185AFE9 /* main.mm */; };
+		C5123255DC85997F9F915A3F /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6984C2B58F74DF83117636C /* Metal.framework */; };
+		D7A559ECA69F22D8FAEF0935 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 399A3D33E39128FF9236A79C /* WebKit.framework */; };
+		DFBE34EDB62824A8D7380D7A /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 621FF2000421FDF40704ED71 /* MetalKit.framework */; };
+		F966C787ABB7D064434F2F81 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4BE2DA97CDD7A074137B07CC /* Security.framework */; };
+		FD438EBC49C79EB8F9801DF3 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C26CD5735C9E6816CF3271F8 /* CoreGraphics.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		06ADBDB0A013868C203F22B5 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		073A541C19990CB44E1A52D0 /* models.rs */ = {isa = PBXFileReference; path = models.rs; sourceTree = "<group>"; };
+		09F57E0B5CF10DB46888E815 /* detect.rs */ = {isa = PBXFileReference; path = detect.rs; sourceTree = "<group>"; };
+		0A7EEE5B59563290D1ADE05A /* accounts.rs */ = {isa = PBXFileReference; path = accounts.rs; sourceTree = "<group>"; };
+		0EA7011FB28F22960B331236 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		1179867CC2B47A9A1F608D08 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		399A3D33E39128FF9236A79C /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		41EC5D7AF808C75BAB665960 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4520386B9333491578353B2D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		4AFD0E1DE34B07DECF896136 /* demo_seed.sql */ = {isa = PBXFileReference; path = demo_seed.sql; sourceTree = "<group>"; };
+		4BE2DA97CDD7A074137B07CC /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		4E84B7F528A75028F557C1F6 /* LotusMail_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LotusMail_iOS.entitlements; sourceTree = "<group>"; };
+		5345E694698D53C3636C385D /* sync.rs */ = {isa = PBXFileReference; path = sync.rs; sourceTree = "<group>"; };
+		56938CFF75071954147C5B27 /* commands.rs */ = {isa = PBXFileReference; path = commands.rs; sourceTree = "<group>"; };
+		5E38B9E2F97F719081940B8A /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		621FF2000421FDF40704ED71 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		640AC6F326A6F50AB498F05B /* error.rs */ = {isa = PBXFileReference; path = error.rs; sourceTree = "<group>"; };
+		7CC557C2332012B8499C6BF8 /* db.rs */ = {isa = PBXFileReference; path = db.rs; sourceTree = "<group>"; };
+		86909E2BAE2722ABE185AFE9 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		8715D99E3DAD351AF894EC92 /* notify.rs */ = {isa = PBXFileReference; path = notify.rs; sourceTree = "<group>"; };
+		9260BA31BB01C0294A27C524 /* spell.rs */ = {isa = PBXFileReference; path = spell.rs; sourceTree = "<group>"; };
+		9B405728DE7FF80699E55A0F /* LotusMail_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LotusMail_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3B7F26D92825307824262D9 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		AC4BC91CCE2A1EF4710D36F6 /* attachments.rs */ = {isa = PBXFileReference; path = attachments.rs; sourceTree = "<group>"; };
+		B301486479818E63A36FEAE2 /* outlook.rs */ = {isa = PBXFileReference; path = outlook.rs; sourceTree = "<group>"; };
+		B5865C65A441E611EF9D51AA /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		C26CD5735C9E6816CF3271F8 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		CA6E7384A6A3D6D35602D93E /* send.rs */ = {isa = PBXFileReference; path = send.rs; sourceTree = "<group>"; };
+		CCA7A10929BCAE7F350001D0 /* mail.rs */ = {isa = PBXFileReference; path = mail.rs; sourceTree = "<group>"; };
+		CDF2EE372CC894D0855DFD81 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		F6984C2B58F74DF83117636C /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		FE44F47692D1167B0A7A891A /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		533BF8BBB8E1BEB30D16700C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4C06FD25A3A11D4764477DC2 /* libapp.a in Frameworks */,
+				FD438EBC49C79EB8F9801DF3 /* CoreGraphics.framework in Frameworks */,
+				C5123255DC85997F9F915A3F /* Metal.framework in Frameworks */,
+				DFBE34EDB62824A8D7380D7A /* MetalKit.framework in Frameworks */,
+				158F16BFDF7DACC08C2CB6CD /* QuartzCore.framework in Frameworks */,
+				F966C787ABB7D064434F2F81 /* Security.framework in Frameworks */,
+				552C74056703EEE4FAD18494 /* UIKit.framework in Frameworks */,
+				D7A559ECA69F22D8FAEF0935 /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3EF1C5C19F0DFB5E6D15F457 /* LotusMail */ = {
+			isa = PBXGroup;
+			children = (
+				86909E2BAE2722ABE185AFE9 /* main.mm */,
+				426086744F1EBECC27B73838 /* bindings */,
+			);
+			path = LotusMail;
+			sourceTree = "<group>";
+		};
+		426086744F1EBECC27B73838 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				5E38B9E2F97F719081940B8A /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		467073D9E340639FF02950C6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C26CD5735C9E6816CF3271F8 /* CoreGraphics.framework */,
+				0EA7011FB28F22960B331236 /* libapp.a */,
+				F6984C2B58F74DF83117636C /* Metal.framework */,
+				621FF2000421FDF40704ED71 /* MetalKit.framework */,
+				FE44F47692D1167B0A7A891A /* QuartzCore.framework */,
+				4BE2DA97CDD7A074137B07CC /* Security.framework */,
+				CDF2EE372CC894D0855DFD81 /* UIKit.framework */,
+				399A3D33E39128FF9236A79C /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		51E82803B6B81E90C41D649A /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		713E1D487991D1A3CFA17FA8 = {
+			isa = PBXGroup;
+			children = (
+				A3B7F26D92825307824262D9 /* assets */,
+				41EC5D7AF808C75BAB665960 /* Assets.xcassets */,
+				1179867CC2B47A9A1F608D08 /* LaunchScreen.storyboard */,
+				51E82803B6B81E90C41D649A /* Externals */,
+				7A3D3D6C6C02FDA24C56B468 /* LotusMail_iOS */,
+				9720B04B6F9F865902D5A9D7 /* Sources */,
+				F1ABDC98BF97852AD14FAD70 /* src */,
+				467073D9E340639FF02950C6 /* Frameworks */,
+				9FAFFE81F386F17674163473 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7A3D3D6C6C02FDA24C56B468 /* LotusMail_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				4520386B9333491578353B2D /* Info.plist */,
+				4E84B7F528A75028F557C1F6 /* LotusMail_iOS.entitlements */,
+			);
+			path = LotusMail_iOS;
+			sourceTree = "<group>";
+		};
+		9720B04B6F9F865902D5A9D7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				3EF1C5C19F0DFB5E6D15F457 /* LotusMail */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		9FAFFE81F386F17674163473 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9B405728DE7FF80699E55A0F /* LotusMail_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F1ABDC98BF97852AD14FAD70 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				0A7EEE5B59563290D1ADE05A /* accounts.rs */,
+				AC4BC91CCE2A1EF4710D36F6 /* attachments.rs */,
+				56938CFF75071954147C5B27 /* commands.rs */,
+				7CC557C2332012B8499C6BF8 /* db.rs */,
+				4AFD0E1DE34B07DECF896136 /* demo_seed.sql */,
+				09F57E0B5CF10DB46888E815 /* detect.rs */,
+				640AC6F326A6F50AB498F05B /* error.rs */,
+				06ADBDB0A013868C203F22B5 /* lib.rs */,
+				CCA7A10929BCAE7F350001D0 /* mail.rs */,
+				B5865C65A441E611EF9D51AA /* main.rs */,
+				073A541C19990CB44E1A52D0 /* models.rs */,
+				8715D99E3DAD351AF894EC92 /* notify.rs */,
+				B301486479818E63A36FEAE2 /* outlook.rs */,
+				CA6E7384A6A3D6D35602D93E /* send.rs */,
+				9260BA31BB01C0294A27C524 /* spell.rs */,
+				5345E694698D53C3636C385D /* sync.rs */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2BA44AEC4FA0A70FF71C0D3F /* LotusMail_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA43E8A224CFFF922B9DAB19 /* Build configuration list for PBXNativeTarget "LotusMail_iOS" */;
+			buildPhases = (
+				32FBC3B7FEEA8655E9F0D423 /* Build Rust Code */,
+				D217559CAA8113A8432811AF /* Sources */,
+				44FDE34BF8636DD457B2F0FE /* Resources */,
+				533BF8BBB8E1BEB30D16700C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LotusMail_iOS;
+			packageProductDependencies = (
+			);
+			productName = LotusMail_iOS;
+			productReference = 9B405728DE7FF80699E55A0F /* LotusMail_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		392C85C54C267011FB34C32C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 1030463627AA23E7E404585B /* Build configuration list for PBXProject "LotusMail" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 713E1D487991D1A3CFA17FA8;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9FAFFE81F386F17674163473 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2BA44AEC4FA0A70FF71C0D3F /* LotusMail_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		44FDE34BF8636DD457B2F0FE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7ADE489C1FC853AE772D45F7 /* Assets.xcassets in Resources */,
+				583CF5A3C134AFEAAC3802BE /* LaunchScreen.storyboard in Resources */,
+				A8A39354AC853A8F62560BBA /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		32FBC3B7FEEA8655E9F0D423 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D217559CAA8113A8432811AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0A28374D9DE73BFC6F56829 /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6C123A4520AAAC1CA8A4B16F /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LotusMail_iOS/LotusMail_iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = LotusMail_iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.pachura.mailmanager;
+				PRODUCT_NAME = "LotusMail";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+				DEVELOPMENT_TEAM = "ABVJV489AR";
+			};
+			name = debug;
+		};
+		7FB7FC78BE6B9240F0EB42ED /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		A9C259128B1AF814B01C8C88 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LotusMail_iOS/LotusMail_iOS.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = LotusMail_iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.pachura.mailmanager;
+				PRODUCT_NAME = "LotusMail";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = arm64;
+				DEVELOPMENT_TEAM = "ABVJV489AR";
+			};
+			name = release;
+		};
+		F533A518A53DA5EA03C1D4C4 /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1030463627AA23E7E404585B /* Build configuration list for PBXProject "LotusMail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F533A518A53DA5EA03C1D4C4 /* debug */,
+				7FB7FC78BE6B9240F0EB42ED /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		DA43E8A224CFFF922B9DAB19 /* Build configuration list for PBXNativeTarget "LotusMail_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6C123A4520AAAC1CA8A4B16F /* debug */,
+				A9C259128B1AF814B01C8C88 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 392C85C54C267011FB34C32C /* Project object */;
+}

@@ -1,0 +1,84 @@
+[package]
+# Nazwa pakietu = nazwa pliku wykonywalnego, widoczna w Menedżerze zadań.
+name = "LotusMail"
+version = "0.1.2"
+description = "Lekki klient poczty łączący funkcje Outlooka i Sparka"
+authors = ["Adrian Pachura"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "lotusmail_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "net"] }
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+thiserror = "2.0.20"
+chrono = { version = "0.4.45", features = ["serde"] }
+ammonia = "4.1.4"
+mail-parser = "0.11.5"
+async-imap = { version = "0.11.3", default-features = false, features = ["runtime-tokio"] }
+lettre = { version = "0.11.23", features = ["tokio1", "tokio1-native-tls"] }
+oauth2 = "5.0.0"
+keyring = { version = "4.1.6", features = ["windows-native-keyring-store"] }
+native-tls = "0.2.18"
+tokio-native-tls = "0.3.1"
+futures-util = "0.3.33"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+utf7-imap = "0.3.2"
+tauri-plugin-dialog = "2.7.2"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-process = "2"
+# Używane w kodzie wspólnym (mail.rs, commands.rs, outlook.rs), więc muszą być
+# dostępne na każdej platformie - wcześniej siedziały w bloku windowsowym.
+base64 = "0.23.1"
+encoding_rs = "0.8.35"
+
+# Synchronizacja konfiguracji między urządzeniami: paczka jest szyfrowana
+# hasłem użytkownika, więc potrzebny jest AEAD i porządne wyprowadzenie klucza.
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+# PKCE dla logowania Microsoft: skrót weryfikatora i otwarcie przeglądarki.
+sha2 = "0.10"
+open = "5"
+
+# Aktualizacje z sieci tylko na desktopie. Na iOS dostarcza je App Store,
+# a wtyczka nie ma tam implementacji i nie zlinkuje się.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-updater = "2"
+
+# Backend pęku kluczy, który `keyring` wciąga sam - ale na iOS odmawia
+# kompilacji bez feature `protected`: system nie ma pęku plikowego, jest
+# wyłącznie chroniony pęk data-protection. Wpisujemy go wprost, żeby
+# unifikacja feature'ów Cargo włączyła go w kopii używanej przez `keyring`.
+[target.'cfg(target_os = "ios")'.dependencies]
+apple-native-keyring-store = { version = "1.0.2", features = ["protected"] }
+# Rejestracja magazynu haseł idzie przez keyring-core - keyring re-eksportuje
+# z niego tylko typy błędów, samej funkcji nie wystawia.
+keyring-core = "1.0"
+
+# Wyłączenie domyślnego menu prawego przycisku w WebView2 (także w ramkach
+# z treścią maili, gdzie JavaScript aplikacji nie sięga).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_Globalization",
+    "Win32_System_Com",
+] }
+winreg = "0.56.0"
+tauri-winrt-notification = "0.8.1"
+

@@ -1,8 +1,9 @@
-# Wydanie LotusMaila: budowa instalatora i publikacja na GitHub Releases.
+# Release pipeline: build the installer and publish it to GitHub Releases.
 #
-# Uruchamia się po wypchnięciu tagu `v*` (np. `git tag v0.2.0; git push --tags`).
-# tauri-action buduje pakiet, podpisuje go kluczem z sekretów i dokłada do
-# wydania `latest.json` - plik, o który pyta updater w działającym programie.
+# Runs when a `v*` tag is pushed (e.g. `git tag v0.2.0; git push --tags`).
+# tauri-action builds the bundle, signs it with the key held in repository
+# secrets and attaches `latest.json` - the file the running app asks for when
+# it checks for updates.
 name: release
 
 on:
@@ -27,8 +28,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # Kompilacja Rusta od zera trwa kilkanaście minut - cache skraca to
-      # do kilku przy kolejnych wydaniach.
+      # A cold Rust build takes upwards of ten minutes; the cache brings later
+      # releases down to a couple.
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -42,7 +43,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: LotusMail ${{ github.ref_name }}
+          releaseName: lotusMail ${{ github.ref_name }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

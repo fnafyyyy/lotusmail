@@ -15,6 +15,7 @@
     LocalDraft,
     MessageBody,
     MessageSummary,
+    StoredDraft,
   } from "$lib/types";
   import { theme } from "$lib/theme.svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -69,6 +70,9 @@
   // Wiadomość otwarta z sekcji „Nowe" zostaje w niej, dopóki nie klikniesz
   // następnej - dopiero wtedy „wpada" do Przejrzanych (jak w Sparku).
   let holdInNewId = $state<number | null>(null);
+  // Zaznaczenie wielu wiadomości (Ctrl/Shift + klik) - identyfikatory wierszy
+  // listy. Wiersz to konwersacja, więc akcje hurtowe obejmują cały wątek.
+  let marked = $state<number[]>([]);
   let addAccountOpen = $state(false);
   let cleanupOpen = $state(false);
   let addAccountStep = $state<"provider" | "transfer">("provider");
@@ -95,6 +99,17 @@
   let drafts = $state<LocalDraft[]>([]);
   let activeTab = $state<number | "mail">("mail");
   let draftSeq = 1;
+  // Kopie robocze z bazy - to, co widać w widoku „Kopie robocze" w panelu
+  // bocznym. Otwarte szkice trzymają swój wiersz przez `savedId`.
+  let storedDrafts = $state<StoredDraft[]>([]);
+  // Kopie robocze pokazujemy w folderze szkiców konta. Konto bez takiego
+  // folderu nie miałoby gdzie ich pokazać - dopiero dla nich (i tylko dla
+  // nich) zapala się zbiorczy widok „Kopie robocze" w panelu bocznym.
+  let orphanDrafts = $derived(
+    storedDrafts.filter(
+      (d) => !folders.some((f) => f.accountId === d.accountId && f.kind === "drafts"),
+    ),
+  );
   let toast = $state("");
   let loaded = $state(false);
   let toastTimer: ReturnType<typeof setTimeout>;
@@ -191,7 +206,11 @@
     !searchQuery.trim() && (view.kind === "unified" || currentFolder?.kind === "inbox"),
   );
   let listTitle = $derived(
-    view.kind === "snoozed" ? "Drzemka" : (currentFolder?.displayName ?? "Wszystkie skrzynki"),
+    view.kind === "snoozed"
+      ? "Drzemka"
+      : view.kind === "drafts"
+        ? "Kopie robocze"
+        : (currentFolder?.displayName ?? "Wszystkie skrzynki"),
   );
   let lastSyncLabel = $derived(
     lastSync
@@ -226,19 +245,24 @@
       messages = await api.searchMessages(searchQuery.trim());
     } else if (view.kind === "snoozed") {
       messages = await api.listSnoozed();
+    } else if (view.kind === "drafts") {
+      messages = orphanDrafts.map(draftSummary);
     } else {
       const inbox = view.kind === "unified" || currentFolder?.kind === "inbox";
       // Przeładowanie nie może skracać listy. Synchronizacja woła je przy
       // każdej zmianie, a doładowane strony znikałyby razem z pozycją
       // przewijania - wyglądało to jak wyrzucenie na górę w środku czytania.
-      const want = Math.max(PAGE, messages.length);
-      messages = await api.listMessages({
+      const want = Math.max(PAGE, serverRows().length);
+      const rows = await api.listMessages({
         folderId: view.kind === "folder" ? view.folderId : undefined,
         category: inbox ? category : undefined,
         sort,
         limit: want,
       });
-      hasMore = messages.length >= want;
+      hasMore = rows.length >= want;
+      // Kopie robocze konta doklejamy na górę jego folderu ze szkicami - tam
+      // ich szuka użytkownik, choć leżą tylko lokalnie, bez APPEND na serwer.
+      messages = [...folderDrafts(currentFolder), ...rows];
       if (inbox) await refreshCounts();
     }
   }
@@ -255,7 +279,7 @@
         folderId: view.kind === "folder" ? view.folderId : undefined,
         category: inbox ? category : undefined,
         sort,
-        offset: messages.length,
+        offset: serverRows().length,
         limit: PAGE,
       });
       // Zabezpieczenie przed duplikatami, gdyby w międzyczasie coś doszło.
@@ -308,6 +332,7 @@
     // animacji dojść do końca i chwilę wybrzmieć, zanim ekran odpłynie.
     const splashTimer = setTimeout(() => (minSplashDone = true), 2600);
     refresh().then(() => (loaded = true));
+    void reloadDrafts();
     api.getSetting("signature").then((s) => (signature = s ?? ""));
     const unlisten = listen("messages-updated", () => refreshSoon());
     const unlistenErr = listen<string>("sync-error", (e) =>
@@ -380,6 +405,7 @@
 
   async function selectView(v: View) {
     if (narrow) mobilePane = "list";
+    marked = [];
     // Nowy folder to nowa lista - dociągnięte strony poprzedniego nie mają
     // tu czego szukać.
     messages = [];
@@ -395,6 +421,7 @@
 
   async function selectCategory(c: Category) {
     messages = [];
+    marked = [];
     category = c;
     holdInNewId = null;
     await loadMessages();
@@ -488,8 +515,11 @@
     openInto(1, list[next]);
   }
 
-  /// Skróty klawiszowe działają, gdy nie piszemy w polu tekstowym.
+  /// Skróty klawiszowe działają, gdy nie piszemy w polu tekstowym i nie stoi
+  /// przed nami okno dialogowe - Escape ma wtedy zamknąć pytanie, a nie
+  /// przy okazji zdjąć zaznaczenie, którego pytanie dotyczy.
   function onWindowKeydown(e: KeyboardEvent) {
+    if (dialog) return;
     const target = e.target as HTMLElement | null;
     const typing =
       !!target &&
@@ -497,6 +527,13 @@
         target.tagName === "TEXTAREA" ||
         target.tagName === "SELECT" ||
         target.isContentEditable);
+    // Ctrl+A zaznacza wszystko, co widać na liście - reszta skrótów działa
+    // bez modyfikatorów.
+    if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a" && activeTab === "mail") {
+      e.preventDefault();
+      marked = messages.map((m) => m.id);
+      return;
+    }
     if (typing || e.ctrlKey || e.altKey || e.metaKey) return;
     if (activeTab !== "mail") return;
 
@@ -507,7 +544,8 @@
       e.preventDefault();
       moveSelection(-1);
     } else if (e.key === "Escape") {
-      if (sideDraft) sideDraft = null;
+      if (marked.length) marked = [];
+      else if (sideDraft) closeSideDraft();
       else if (selected2) closePane(2);
       else clearSlot(1);
     }
@@ -564,6 +602,7 @@
   let searchTimer: ReturnType<typeof setTimeout>;
   function onSearch(q: string) {
     searchQuery = q;
+    marked = [];
     clearTimeout(searchTimer);
     searchTimer = setTimeout(loadMessages, 250);
   }
@@ -577,7 +616,7 @@
       selected = null;
       body = null;
       thread1 = [];
-      sideDraft = null;
+      closeSideDraft();
     } else {
       selected2 = null;
       body2 = null;
@@ -586,6 +625,10 @@
   }
 
   async function openInto(slot: 1 | 2, m: MessageSummary) {
+    if (m.id < 0) {
+      await openStoredDraft(-m.id);
+      return;
+    }
     // Poprzednio przytrzymana wiadomość spada teraz do Przejrzanych.
     if (holdInNewId !== m.id) holdInNewId = null;
     if (isUnread(m)) holdInNewId = m.id;
@@ -629,6 +672,11 @@
   }
 
   async function openMessage(m: MessageSummary) {
+    // Wiersze kopii roboczych mają ujemne id - nie ma czego czytać, jest co pisać.
+    if (m.id < 0) {
+      await openStoredDraft(-m.id);
+      return;
+    }
     if (narrow) mobilePane = "message";
     await openInto(1, m);
   }
@@ -839,26 +887,81 @@
       bodyHtml: init.bodyHtml ?? "",
       attachments: [],
     };
+    markPristine(draft);
     drafts.push(draft);
     activeTab = draft.localId;
   }
 
+  /// Zamknięcie karty szkicu. Treść nie ginie - trafia do kopii roboczych,
+  /// skąd wraca do edytora kliknięciem w panelu bocznym.
   function closeDraft(localId: number) {
-    drafts = drafts.filter((d) => d.localId !== localId);
-    if (activeTab === localId) activeTab = "mail";
+    const d = drafts.find((x) => x.localId === localId);
+    removeDraftTab(localId);
+    if (d) void closeAndKeep(d);
   }
 
   function reSubjectOf(m: MessageSummary): string {
     return m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`;
   }
 
+  /// Porządkuje tekstową wersję maila przed wklejeniem jej w cytat.
+  ///
+  /// Outlook (i Exchange) generują ją z HTML-a i wychodzi z tego materiał
+  /// nienadający się do czytania: każdy akapit rozdzielony pustym wierszem,
+  /// `[cid:image012.png@01DD...]` w miejscu obrazków, `[signature_1195171697]`
+  /// po ikonkach stopki, każdy adres zdublowany przez `<mailto:...>`, a listy
+  /// DW ciągnące się przez pół ekranu. Przy dłuższym wątku (ten od przewoźnika
+  /// ma 50 kB tekstu i 10 tysięcy wierszy) cytat robił się ścianą śmieci.
+  function cleanQuotedText(raw: string): string {
+    const lines = raw
+      .replace(/\r\n?/g, "\n")
+      // Ślady po obrazkach: znaczniki cid i placeholdery ikonek stopki razem
+      // z doklejonym za nimi adresem strony.
+      .replace(/\[cid:[^\]]*\]/g, "")
+      .replace(/\[signature_\d+\](<[^>]*>)?/g, "")
+      // `adres@firma.pl<mailto:adres@firma.pl>` - druga kopia jest zbędna.
+      .replace(/<mailto:[^>]*>/g, "")
+      // `Klauzula RODO<https://...>` - zostaje sama nazwa, adres i tak nie jest
+      // klikalny w cytacie.
+      .replace(/<https?:\/\/[^>]*>/g, "")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+$/, ""));
+
+    const out: string[] = [];
+    for (let line of lines) {
+      // Rozdmuchane listy odbiorców skracamy - w cytacie liczy się, że były,
+      // a nie wszystkie czterdzieści adresów.
+      const to = line.match(/^(To|Cc|DW|Do):\s*(.*)$/i);
+      if (to && to[2].length > 160) line = `${to[1]}: ${to[2].slice(0, 160).trim()} […]`;
+      // Podwójna interlinia z konwersji HTML → tekst: jeden pusty wiersz starcza.
+      if (!line.trim() && !out[out.length - 1]?.trim()) continue;
+      out.push(line);
+    }
+    while (out.length && !out[out.length - 1].trim()) out.pop();
+    return out.join("\n");
+  }
+
   function quotedBodyOf(m: MessageSummary, b: MessageBody | null): string {
     const when = new Date(m.date * 1000).toLocaleString("pl-PL");
-    const source = escapeHtml(b?.text ?? "").replace(/\n/g, "<br>");
+    // Puste wiersze robimy odstępem akapitu, a nie pustą linijką. Outlook
+    // rozdziela nimi każdy wiersz (jego wersja tekstowa to konwersja z HTML-a
+    // akapit po akapicie), więc dosłowne przepisanie dawało cytat rozstrzelony
+    // na dwa razy większą wysokość niż trzeba.
+    const source = cleanQuotedText(b?.text ?? "")
+      .split(/\n{2,}/)
+      .map((block) => block.trim())
+      .filter(Boolean)
+      .map((block) => `<div>${escapeHtml(block).replace(/\n/g, "<br>")}</div>`)
+      .join("");
     const header = escapeHtml(
       `W dniu ${when} ${m.fromName || m.fromAddr} <${m.fromAddr}> napisał(a):`,
     );
-    return `<br><br><div>${header}</div><blockquote>${source}</blockquote>`;
+    // Klasy `lm-quote*` rozpoznaje edytor: historia startuje zwinięta, żeby
+    // pisać nad czystą kartką. Do wysyłki idzie i tak w całości.
+    return (
+      `<br><br><div class="lm-quote-head">${header}</div>` +
+      `<blockquote class="lm-quote">${source}</blockquote>`
+    );
   }
 
   function replyFor(slot: 1 | 2, all: boolean) {
@@ -900,6 +1003,7 @@
     // Odpowiedź pisze się obok wiadomości: mail po lewej, edytor po prawej.
     // Na wąskim ekranie nie ma „obok", więc szkic dostaje własną kartę
     // na pełnym ekranie.
+    markPristine(draft);
     if (slot === 1) {
       placeSideDraft(draft);
     } else {
@@ -923,6 +1027,225 @@
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Kopie robocze. Szkic żyje w SQLite, nie tylko w pamięci karty: zamknięcie
+  // edytora, Escape albo zamknięcie programu nie mają prawa zabrać zaczętego
+  // maila. Zapis leci z opóźnieniem, żeby pisanie nie waliło w bazę przy
+  // każdej literze; przy zamykaniu szkicu wymuszamy go od razu.
+  // ---------------------------------------------------------------------
+  const DRAFT_SAVE_DELAY = 800;
+  const saveTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  /// Ostatnio zapisana postać szkicu - po niej poznajemy, że nic się nie zmieniło.
+  const savedStamps = new Map<number, string>();
+
+  function draftStamp(d: LocalDraft): string {
+    return [
+      d.accountId,
+      d.toAddrs,
+      d.ccAddrs,
+      d.bccAddrs,
+      d.subject,
+      d.bodyHtml,
+      d.attachments.map((a) => `${a.filename}:${a.size}`).join("|"),
+    ].join("\u0000");
+  }
+
+  // Czytanie pól w efekcie zapisuje je jako zależności - każda zmiana
+  // w otwartym szkicu przestawia zegar zapisu.
+  $effect(() => {
+    const open = sideDraft ? [...drafts, sideDraft] : [...drafts];
+    for (const d of open) {
+      if (savedStamps.get(d.localId) === draftStamp(d)) continue;
+      clearTimeout(saveTimers.get(d.localId));
+      saveTimers.set(
+        d.localId,
+        setTimeout(() => void persistDraft(d), DRAFT_SAVE_DELAY),
+      );
+    }
+  });
+
+  async function persistDraft(d: LocalDraft) {
+    saveTimers.delete(d.localId);
+    const stamp = draftStamp(d);
+    if (savedStamps.get(d.localId) === stamp) return;
+    // Pusty szkic (sama stopka) nie jest żadną kopią roboczą - a jeśli nią
+    // był, to znaczy, że użytkownik go wyczyścił.
+    if (isDraftEmpty(d)) {
+      const previous = d.savedId ?? null;
+      d.savedId = null;
+      savedStamps.set(d.localId, stamp);
+      await dropStoredDraft(previous);
+      return;
+    }
+    try {
+      d.savedId = await api.saveDraft({
+        id: d.savedId ?? null,
+        accountId: d.accountId,
+        toAddrs: d.toAddrs,
+        ccAddrs: d.ccAddrs,
+        bccAddrs: d.bccAddrs,
+        inReplyTo: d.inReplyTo ?? null,
+        references: d.references ?? null,
+        subject: d.subject,
+        bodyHtml: d.bodyHtml,
+        isReply: d.isReply === true,
+        attachments: $state.snapshot(d.attachments),
+      });
+      savedStamps.set(d.localId, stamp);
+      await reloadDrafts();
+    } catch (e) {
+      showToast(`Nie udało się zapisać kopii roboczej: ${e}`);
+    }
+  }
+
+  /// Zapis „na już" - przy zamykaniu edytora nie ma na co czekać.
+  async function flushDraft(d: LocalDraft) {
+    clearTimeout(saveTimers.get(d.localId));
+    saveTimers.delete(d.localId);
+    await persistDraft(d);
+  }
+
+  /// Świeżo otwarty szkic jeszcze nie jest kopią roboczą: zapisze się dopiero,
+  /// gdy coś w nim ruszysz. Inaczej samo zerknięcie w „Odpowiedz" zostawiałoby
+  /// w kopiach roboczych pusty cytat.
+  function markPristine(d: LocalDraft) {
+    savedStamps.set(d.localId, draftStamp(d));
+  }
+
+  /// Zamknięcie edytora: dopisujemy, co się zmieniło, i mówimy o tym wprost -
+  /// bez tego zamknięcie wyglądało jak wyrzucenie maila do kosza.
+  async function closeAndKeep(d: LocalDraft) {
+    await flushDraft(d);
+    if (d.savedId != null) showToast("Zapisano kopię roboczą");
+    forgetDraft(d.localId);
+  }
+
+  /// Szkic zniknął z ekranu - nie ma czego zapisywać ani z czym porównywać.
+  function forgetDraft(localId: number) {
+    clearTimeout(saveTimers.get(localId));
+    saveTimers.delete(localId);
+    savedStamps.delete(localId);
+  }
+
+  async function dropStoredDraft(id: number | null | undefined) {
+    if (id == null) return;
+    try {
+      await api.deleteDraft(id);
+    } catch (e) {
+      showToast(`Nie udało się usunąć kopii roboczej: ${e}`);
+    }
+    await reloadDrafts();
+  }
+
+  async function reloadDrafts() {
+    storedDrafts = await api.listDrafts();
+    if (view.kind === "drafts" || currentFolder?.kind === "drafts") await loadMessages();
+  }
+
+  /// Wiersze pochodzące z serwera - kopie robocze (ujemne id) nie liczą się
+  /// do stronicowania, bo `offset` dotyczy wyłącznie bazy wiadomości.
+  function serverRows(): MessageSummary[] {
+    return messages.filter((m) => m.id > 0);
+  }
+
+  /// Kopie robocze pokazywane w folderze szkiców konta. Konto bywa z dwoma
+  /// takimi folderami (np. „Drafts" i „Wersje robocze") - wtedy widać je
+  /// w obu, żeby nie zależało od tego, w który akurat klikniesz.
+  function folderDrafts(folder: Folder | null): MessageSummary[] {
+    if (!folder || folder.kind !== "drafts") return [];
+    return storedDrafts
+      .filter((d) => d.accountId === folder.accountId)
+      .map(draftSummary);
+  }
+
+  /// Kopia robocza jako wiersz listy. Ujemne `id` odróżnia ją od maila -
+  /// kliknięcie otwiera edytor, nie panel czytania.
+  function draftSummary(d: StoredDraft): MessageSummary {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = d.bodyHtml;
+    return {
+      id: -d.id,
+      folderId: 0,
+      subject: d.subject || "(bez tematu)",
+      fromName: d.toAddrs.trim() || "(bez adresata)",
+      fromAddr: d.toAddrs.trim(),
+      date: d.updatedAt,
+      preview: tmp.innerText.replace(/\s+/g, " ").trim().slice(0, 200),
+      isRead: true,
+      isFlagged: false,
+      hasAttachments: d.attachments.length > 0,
+      category: "primary",
+      snoozedUntil: null,
+      threadId: "",
+      threadCount: 1,
+      threadUnread: 0,
+    };
+  }
+
+  /// Wraca do pisania odłożonego maila.
+  async function openStoredDraft(id: number) {
+    // Szkic może być już otwarty - wtedy wystarczy go pokazać.
+    const open = (sideDraft ? [...drafts, sideDraft] : drafts).find((d) => d.savedId === id);
+    if (open) {
+      activeTab = open.localId === sideDraft?.localId ? "mail" : open.localId;
+      return;
+    }
+    let stored: StoredDraft;
+    try {
+      stored = await api.getDraft(id);
+    } catch (e) {
+      showToast(`Nie udało się otworzyć kopii roboczej: ${e}`);
+      return;
+    }
+    const draft: LocalDraft = {
+      localId: draftSeq++,
+      savedId: stored.id,
+      accountId: stored.accountId,
+      toAddrs: stored.toAddrs,
+      ccAddrs: stored.ccAddrs,
+      bccAddrs: stored.bccAddrs,
+      inReplyTo: stored.inReplyTo,
+      references: stored.references,
+      subject: stored.subject,
+      bodyHtml: stored.bodyHtml,
+      isReply: stored.isReply,
+      attachments: stored.attachments.map((a) => ({ ...a })),
+    };
+    // Świeżo wczytany szkic jest identyczny z tym w bazie - bez tego pierwszy
+    // przebieg autozapisu zapisywałby go bez potrzeby.
+    markPristine(draft);
+    placeSideDraft(draft);
+  }
+
+  /// Zamknięcie edytora obok wiadomości - treść zostaje w kopiach roboczych.
+  function closeSideDraft() {
+    const d = sideDraft;
+    sideDraft = null;
+    if (d) void closeAndKeep(d);
+  }
+
+  /// „Odrzuć" - szkic znika razem z kopią roboczą.
+  function discardSideDraft() {
+    const d = sideDraft;
+    sideDraft = null;
+    if (!d) return;
+    forgetDraft(d.localId);
+    void dropStoredDraft(d.savedId);
+  }
+
+  function discardDraft(localId: number) {
+    const d = drafts.find((x) => x.localId === localId);
+    removeDraftTab(localId);
+    forgetDraft(localId);
+    void dropStoredDraft(d?.savedId);
+  }
+
+  /// Zdejmuje kartę szkicu bez ruszania kopii roboczej.
+  function removeDraftTab(localId: number) {
+    drafts = drafts.filter((d) => d.localId !== localId);
+    if (activeTab === localId) activeTab = "mail";
+  }
+
   /// Edytor mieszka z boku wiadomości i jest tam jeden. Nowy szkic przejmuje
   /// to miejsce, ale zaczęta praca nie może zniknąć bez śladu: niepusty szkic
   /// schodzi wtedy do karty. Pusty po prostu ustępuje - dzięki temu drugie
@@ -934,6 +1257,7 @@
       return;
     }
     if (sideDraft && !isDraftEmpty(sideDraft)) drafts.push(sideDraft);
+    else if (sideDraft) forgetDraft(sideDraft.localId);
     selected2 = null;
     body2 = null;
     thread2 = [];
@@ -960,6 +1284,7 @@
       bodyHtml: signatureHtml(accountId),
       attachments: [],
     };
+    markPristine(draft);
     placeSideDraft(draft);
   }
 
@@ -977,6 +1302,16 @@
 
   // Akcje z menu kontekstowego listy (PPM na wiadomości).
   async function messageAction(m: MessageSummary, action: string, arg?: number) {
+    // Kopia robocza nie jest mailem z serwera: da się ją otworzyć albo usunąć,
+    // reszta akcji (flaga, drzemka, reguła) nie ma tu sensu.
+    if (m.id < 0) {
+      if (action === "open") await openStoredDraft(-m.id);
+      else if (action === "delete") {
+        await dropStoredDraft(-m.id);
+        showToast("Kopia robocza usunięta");
+      }
+      return;
+    }
     switch (action) {
       case "rule":
         ruleFor = m;
@@ -1032,6 +1367,74 @@
     }
   }
 
+  /// Identyfikatory wszystkich wiadomości z zaznaczonych wierszy. Wiersz listy
+  /// to konwersacja, więc usunięcie „tej jednej" zostawiłoby wątek na liście
+  /// z wcześniejszą wiadomością - wyglądałoby to, jakby nic się nie stało.
+  async function markedMessageIds(): Promise<number[]> {
+    const rows = messages.filter((m) => marked.includes(m.id));
+    const ids = new Set<number>();
+    for (const m of rows) {
+      if (m.threadId && m.threadCount > 1) {
+        const thread = await api.listThread(m.threadId);
+        for (const t of thread) ids.add(t.id);
+      } else {
+        ids.add(m.id);
+      }
+    }
+    return [...ids];
+  }
+
+  /// Akcje na zaznaczeniu z paska nad listą.
+  async function bulkAction(action: string) {
+    const rows = messages.filter((m) => marked.includes(m.id));
+    if (rows.length === 0) return;
+
+    if (action === "read" || action === "unread") {
+      const read = action === "read";
+      for (const m of rows) {
+        if (m.threadId) await api.setThreadRead(m.threadId, read);
+        else await api.setRead(m.id, read);
+      }
+      marked = [];
+      showToast(
+        read
+          ? `Oznaczono jako przeczytane: ${rows.length}`
+          : `Oznaczono jako nieprzeczytane: ${rows.length}`,
+      );
+      folders = await api.listFolders();
+      await loadMessages();
+      await refreshCounts();
+      return;
+    }
+
+    if (action !== "delete") return;
+    const ids = await markedMessageIds();
+    const extra = ids.length - rows.length;
+    dialog = {
+      title: rows.length === 1 ? "Usunąć wiadomość?" : `Usunąć ${rows.length} wiadomości?`,
+      message:
+        "Trafią do Kosza, tak samo jak przy usuwaniu pojedynczej wiadomości." +
+        (extra > 0 ? ` Zaznaczone konwersacje obejmują łącznie ${ids.length} wiadomości.` : ""),
+      confirmLabel: "Usuń",
+      danger: true,
+      onconfirm: async () => {
+        dialog = null;
+        // Zaznaczona wiadomość mogła być otwarta w panelu - nie ma po co
+        // zostawiać na ekranie czegoś, czego już nie ma.
+        if (selected && ids.includes(selected.id)) clearSlot(1);
+        if (selected2 && ids.includes(selected2.id)) clearSlot(2);
+        try {
+          const removed = await api.cleanupDelete(ids);
+          showToast(`Przeniesiono do Kosza: ${removed}`);
+        } catch (e) {
+          showToast(`Nie udało się usunąć: ${e}`);
+        }
+        marked = [];
+        await refresh();
+      },
+    };
+  }
+
   function detachSideDraft() {
     if (!sideDraft) return;
     drafts.push(sideDraft);
@@ -1067,21 +1470,33 @@
   async function sendDraft(draft: LocalDraft, sendAt: number | null) {
     const tmp = document.createElement("div");
     tmp.innerHTML = draft.bodyHtml;
-    await api.queueSend({
-      accountId: draft.accountId,
-      toAddrs: draft.toAddrs,
-      ccAddrs: draft.ccAddrs,
-      bccAddrs: draft.bccAddrs,
-      inReplyTo: draft.inReplyTo ?? null,
-      references: draft.references ?? null,
-      subject: draft.subject,
-      bodyText: tmp.innerText,
-      bodyHtml: draft.bodyHtml || null,
-      sendAt,
-      attachments: draft.attachments,
-    });
+    try {
+      await api.queueSend({
+        accountId: draft.accountId,
+        toAddrs: draft.toAddrs,
+        ccAddrs: draft.ccAddrs,
+        bccAddrs: draft.bccAddrs,
+        inReplyTo: draft.inReplyTo ?? null,
+        references: draft.references ?? null,
+        subject: draft.subject,
+        bodyText: tmp.innerText,
+        bodyHtml: draft.bodyHtml || null,
+        sendAt,
+        attachments: $state.snapshot(draft.attachments),
+      });
+    } catch (e) {
+      // Bez tego nieudane kolejkowanie wyglądało jak wysłanie: edytor zostawał
+      // otwarty z treścią, a użytkownik nie dostawał żadnego sygnału.
+      showToast(`Nie udało się wysłać: ${e}`);
+      return;
+    }
     if (sideDraft?.localId === draft.localId) sideDraft = null;
-    closeDraft(draft.localId);
+    // Wysłany mail nie jest już kopią roboczą. Kolejność jest ważna: najpierw
+    // zdejmujemy szkic z autozapisu, inaczej zaległy zegar wskrzesiłby go
+    // zaraz po skasowaniu.
+    forgetDraft(draft.localId);
+    removeDraftTab(draft.localId);
+    void dropStoredDraft(draft.savedId);
     showToast(sendAt ? "Zaplanowano wysyłkę" : "Wysyłam wiadomość…");
   }
 
@@ -1343,6 +1758,7 @@
     <Sidebar
       {accounts}
       {folders}
+      draftCount={orphanDrafts.length}
       {view}
       {lastSyncLabel}
       {syncStatus}
@@ -1382,6 +1798,9 @@
       {sort}
       {searchQuery}
       title={listTitle}
+      {marked}
+      onmark={(ids) => (marked = ids)}
+      onbulk={bulkAction}
       onopen={openMessage}
       oncategory={selectCategory}
       onsort={selectSort}
@@ -1429,14 +1848,20 @@
     />
     {#if sideDraft}
       <div class="flex min-w-0 flex-1 flex-col" in:fly={{ x: 48, duration: 220 }}>
-        <ComposeView
-          draft={sideDraft}
-          {accounts}
-          embedded
-          onsend={(sendAt) => sendDraft(sideDraft!, sendAt)}
-          onclose={() => (sideDraft = null)}
-          ondetach={detachSideDraft}
-        />
+        <!-- Klucz na szkicu: nowy szkic wchodzący na miejsce poprzedniego
+             dostaje własny edytor. Bez tego komponent bywał ten sam i zostawał
+             w nim stan poprzedniej wiadomości (choćby rozwinięte pola kopii). -->
+        {#key sideDraft.localId}
+          <ComposeView
+            draft={sideDraft}
+            {accounts}
+            embedded
+            onsend={(sendAt) => sendDraft(sideDraft!, sendAt)}
+            onclose={closeSideDraft}
+            ondiscard={discardSideDraft}
+            ondetach={detachSideDraft}
+          />
+        {/key}
       </div>
     {:else if selected2}
       <div class="flex min-w-0 flex-1" in:fly={{ x: 48, duration: 220 }}>
@@ -1516,6 +1941,7 @@
       {accounts}
       onsend={(sendAt) => sendDraft(d, sendAt)}
       onclose={() => closeDraft(d.localId)}
+      ondiscard={() => discardDraft(d.localId)}
     />
   {/if}
 {/each}

@@ -105,7 +105,46 @@ pub async fn remove_account(db: State<'_, Db>, id: i64) -> Result<()> {
         email
     };
     accounts::delete_password(&email)?;
+    // OAuth2 accounts carry a second keychain entry; leaving it behind would
+    // hand a re-added account someone else's stale refresh token.
+    accounts::delete_refresh_token(&email).ok();
+    crate::auth::forget(&email);
     Ok(())
+}
+
+/// Runs the Microsoft sign-in and stores the refresh token for this address.
+///
+/// The account row itself is written afterwards by `add_account` - keeping the
+/// two apart means a cancelled or failed sign-in leaves nothing behind.
+#[tauri::command]
+pub async fn oauth_sign_in(app: AppHandle, email: String) -> Result<()> {
+    let client_id = crate::auth::client_id(&app)?;
+    let tokens = crate::oauth::login(&client_id).await?;
+    // Okno logowania Microsoftu pamięta sesje, więc łatwo kliknąć nie to konto,
+    // co trzeba. Bez tej kontroli tokeny wylądowałyby w pęku kluczy pod cudzym
+    // adresem, a IMAP odmawiałby logowania bez słowa wyjaśnienia.
+    if let Some(signed_in) = tokens.account.as_deref() {
+        if !signed_in.eq_ignore_ascii_case(email.trim()) {
+            return Err(AppError::Other(format!(
+                "zalogowano się jako {signed_in}, a konto dodajesz dla {}: zaloguj się na właściwe konto",
+                email.trim()
+            )));
+        }
+    }
+    if tokens.refresh_token.is_empty() {
+        return Err(AppError::Other(
+            "Microsoft did not return a refresh token - check that the application requests offline_access".into(),
+        ));
+    }
+    crate::auth::remember(&email, tokens)?;
+    Ok(())
+}
+
+/// Whether an application ID has been set, so the interface can offer the
+/// Microsoft button instead of failing at the moment it is pressed.
+#[tauri::command]
+pub async fn oauth_is_configured(app: AppHandle) -> Result<bool> {
+    Ok(crate::auth::client_id(&app).is_ok())
 }
 
 #[tauri::command]
@@ -704,6 +743,200 @@ pub async fn queue_send(app: AppHandle, db: State<'_, Db>, draft: ComposeDraft) 
         crate::send::process_outbox(&app).await;
     });
     Ok(id)
+}
+
+/// Zapisuje kopię roboczą. Bez `id` zakłada nową, z `id` nadpisuje istniejącą.
+/// Wołane przy pisaniu (z opóźnieniem), więc musi być tanie: załączniki - a to
+/// jedyne, co waży - przepisujemy dopiero, gdy faktycznie się zmieniły.
+#[tauri::command]
+pub async fn save_draft(db: State<'_, Db>, draft: DraftInput) -> Result<i64> {
+    use base64::Engine;
+    let conn = db.0.lock().unwrap();
+    let id = match draft.id {
+        Some(id) => {
+            let changed = conn.execute(
+                "UPDATE drafts SET account_id = ?2, to_addrs = ?3, cc_addrs = ?4, bcc_addrs = ?5,
+                        in_reply_to = ?6, refs = ?7, subject = ?8, body_html = ?9, is_reply = ?10,
+                        updated_at = unixepoch()
+                 WHERE id = ?1",
+                params![
+                    id,
+                    draft.account_id,
+                    draft.to_addrs,
+                    draft.cc_addrs,
+                    draft.bcc_addrs,
+                    draft.in_reply_to,
+                    draft.references,
+                    draft.subject,
+                    draft.body_html,
+                    draft.is_reply as i64,
+                ],
+            )?;
+            // Szkic mógł zniknąć (wysłany albo odrzucony w innym miejscu) -
+            // wtedy zapis zakłada go na nowo, zamiast przepaść.
+            if changed == 0 {
+                insert_draft(&conn, &draft)?
+            } else {
+                id
+            }
+        }
+        None => insert_draft(&conn, &draft)?,
+    };
+
+    // Porównanie po nazwie i rozmiarze wystarcza: załączników szkicu nie da się
+    // podmienić w miejscu, można je tylko dodać albo usunąć.
+    let mut stmt = conn.prepare(
+        "SELECT filename, LENGTH(data) FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
+    )?;
+    let have: Vec<(String, i64)> = stmt
+        .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    let want: Vec<(String, i64)> = draft
+        .attachments
+        .iter()
+        .map(|a| (a.filename.clone(), a.size))
+        .collect();
+    if have != want {
+        conn.execute("DELETE FROM draft_attachments WHERE draft_id = ?1", [id])?;
+        for a in &draft.attachments {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&a.data_b64)
+                .map_err(|e| AppError::Other(format!("załącznik „{}”: {e}", a.filename)))?;
+            conn.execute(
+                "INSERT INTO draft_attachments (draft_id, filename, mime, data)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![id, a.filename, a.mime, bytes],
+            )?;
+        }
+    }
+    Ok(id)
+}
+
+fn insert_draft(conn: &rusqlite::Connection, draft: &DraftInput) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO drafts (account_id, to_addrs, cc_addrs, bcc_addrs, in_reply_to, refs,
+                             subject, body_html, is_reply, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, unixepoch())",
+        params![
+            draft.account_id,
+            draft.to_addrs,
+            draft.cc_addrs,
+            draft.bcc_addrs,
+            draft.in_reply_to,
+            draft.references,
+            draft.subject,
+            draft.body_html,
+            draft.is_reply as i64,
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Wszystkie kopie robocze, od ostatnio ruszanej. Załączniki wracają bez
+/// treści - lista rysuje z nich tylko spinacz, a przepisywanie megabajtów do
+/// base64 przy każdym zapisie kosztowałoby więcej niż całe pisanie maila.
+/// Pełny szkic (z załącznikami) daje `get_draft`.
+#[tauri::command]
+pub async fn list_drafts(db: State<'_, Db>) -> Result<Vec<StoredDraft>> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare(
+        "SELECT id, account_id, to_addrs, cc_addrs, bcc_addrs, in_reply_to, refs,
+                subject, body_html, is_reply, updated_at
+         FROM drafts ORDER BY updated_at DESC, id DESC",
+    )?;
+    let mut drafts = stmt
+        .query_map([], |r| {
+            Ok(StoredDraft {
+                id: r.get(0)?,
+                account_id: r.get(1)?,
+                to_addrs: r.get(2)?,
+                cc_addrs: r.get(3)?,
+                bcc_addrs: r.get(4)?,
+                in_reply_to: r.get(5)?,
+                references: r.get(6)?,
+                subject: r.get(7)?,
+                body_html: r.get(8)?,
+                is_reply: r.get::<_, i64>(9)? != 0,
+                updated_at: r.get(10)?,
+                attachments: Vec::new(),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+
+    let mut stmt = conn.prepare(
+        "SELECT draft_id, filename, mime, LENGTH(data) FROM draft_attachments ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            DraftAttachment {
+                filename: r.get(1)?,
+                mime: r.get(2)?,
+                size: r.get(3)?,
+                data_b64: String::new(),
+            },
+        ))
+    })?;
+    for row in rows {
+        let (draft_id, attachment) = row?;
+        if let Some(d) = drafts.iter_mut().find(|d| d.id == draft_id) {
+            d.attachments.push(attachment);
+        }
+    }
+    Ok(drafts)
+}
+
+/// Jedna kopia robocza w całości - wołane, gdy szkic wraca do edytora.
+#[tauri::command]
+pub async fn get_draft(db: State<'_, Db>, id: i64) -> Result<StoredDraft> {
+    use base64::Engine;
+    let conn = db.0.lock().unwrap();
+    let mut draft = conn.query_row(
+        "SELECT id, account_id, to_addrs, cc_addrs, bcc_addrs, in_reply_to, refs,
+                subject, body_html, is_reply, updated_at
+         FROM drafts WHERE id = ?1",
+        [id],
+        |r| {
+            Ok(StoredDraft {
+                id: r.get(0)?,
+                account_id: r.get(1)?,
+                to_addrs: r.get(2)?,
+                cc_addrs: r.get(3)?,
+                bcc_addrs: r.get(4)?,
+                in_reply_to: r.get(5)?,
+                references: r.get(6)?,
+                subject: r.get(7)?,
+                body_html: r.get(8)?,
+                is_reply: r.get::<_, i64>(9)? != 0,
+                updated_at: r.get(10)?,
+                attachments: Vec::new(),
+            })
+        },
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT filename, mime, data FROM draft_attachments WHERE draft_id = ?1 ORDER BY id",
+    )?;
+    let rows = stmt.query_map([id], |r| {
+        let data: Vec<u8> = r.get(2)?;
+        Ok(DraftAttachment {
+            filename: r.get(0)?,
+            mime: r.get(1)?,
+            size: data.len() as i64,
+            data_b64: base64::engine::general_purpose::STANDARD.encode(&data),
+        })
+    })?;
+    draft.attachments = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(draft)
+}
+
+/// Kasuje kopię roboczą - po wysyłce albo po odrzuceniu szkicu.
+#[tauri::command]
+pub async fn delete_draft(db: State<'_, Db>, id: i64) -> Result<()> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM drafts WHERE id = ?1", [id])?;
+    Ok(())
 }
 
 /// Wczytuje plik z dysku jako załącznik szkicu (ścieżka z okna wyboru pliku).

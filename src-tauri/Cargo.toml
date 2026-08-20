@@ -1,7 +1,7 @@
 [package]
 # Nazwa pakietu = nazwa pliku wykonywalnego, widoczna w Menedżerze zadań.
 name = "LotusMail"
-version = "0.1.2"
+version = "0.1.3"
 description = "Lekki klient poczty łączący funkcje Outlooka i Sparka"
 authors = ["Adrian Pachura"]
 edition = "2021"

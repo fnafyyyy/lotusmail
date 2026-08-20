@@ -2,6 +2,7 @@
 // (przykłady w `examples/`, np. `cargo run --example flags_probe`).
 pub mod accounts;
 mod attachments;
+pub mod auth;
 mod commands;
 mod db;
 mod detect;
@@ -71,6 +72,8 @@ pub fn run() {
             commands::list_accounts,
             commands::add_account,
             commands::remove_account,
+            commands::oauth_sign_in,
+            commands::oauth_is_configured,
             commands::list_folders,
             commands::list_messages,
             commands::category_counts,
@@ -96,6 +99,10 @@ pub fn run() {
             commands::search_messages,
             commands::search_server,
             commands::queue_send,
+            commands::save_draft,
+            commands::list_drafts,
+            commands::get_draft,
+            commands::delete_draft,
             commands::sync_now,
             commands::check_mail,
             commands::detect_settings,

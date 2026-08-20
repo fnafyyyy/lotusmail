@@ -152,6 +152,43 @@ pub struct DraftAttachment {
     pub data_b64: String,
 }
 
+/// Kopia robocza przysłana z edytora. `id` puste = nowy szkic.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftInput {
+    pub id: Option<i64>,
+    pub account_id: i64,
+    pub to_addrs: String,
+    pub cc_addrs: String,
+    pub bcc_addrs: String,
+    pub in_reply_to: Option<String>,
+    pub references: Option<String>,
+    pub subject: String,
+    pub body_html: String,
+    #[serde(default)]
+    pub is_reply: bool,
+    #[serde(default)]
+    pub attachments: Vec<DraftAttachment>,
+}
+
+/// Kopia robocza odczytana z bazy - to samo, co wyżej, plus czas zapisu.
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredDraft {
+    pub id: i64,
+    pub account_id: i64,
+    pub to_addrs: String,
+    pub cc_addrs: String,
+    pub bcc_addrs: String,
+    pub in_reply_to: Option<String>,
+    pub references: Option<String>,
+    pub subject: String,
+    pub body_html: String,
+    pub is_reply: bool,
+    pub updated_at: i64,
+    pub attachments: Vec<DraftAttachment>,
+}
+
 /// Grupa kandydatów do sprzątania: wszystko, co przyszło od jednego nadawcy.
 /// Sprzątamy nadawcami, a nie pojedynczymi mailami - i tak zwykle chodzi
 /// o pozbycie się całej seryjnej korespondencji z jednego źródła.

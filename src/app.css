@@ -211,6 +211,20 @@ button:not(:disabled):active {
   text-underline-offset: 3px;
 }
 
+/* Świeżo wpisany znak gaśnie na czas animacji pojawiania się (lib/typeglow.ts).
+   Highlight nie dotyka treści, więc w wysyłanym HTML-u nie ma po nim śladu. */
+::highlight(typing) {
+  color: transparent;
+}
+
+/* Warstwa duszków animowanych liter - nad wszystkim, nieklikalna. */
+.typeglow-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
 /* WebView2 dokłada własny krzyżyk do input[type=search] - mamy swój, ten jest zbędny. */
 input[type="search"]::-webkit-search-cancel-button,
 input[type="search"]::-webkit-search-decoration {

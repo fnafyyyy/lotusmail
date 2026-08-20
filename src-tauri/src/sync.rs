@@ -5,9 +5,10 @@
 //! Uwaga na blokady: mutex bazy nigdy nie jest trzymany przez `await` -
 //! dane zbieramy z sieci do wektorów, a zapisujemy w krótkich sekcjach.
 
+use crate::auth::{self, Secret};
 use crate::db::Db;
 use crate::error::{AppError, Result};
-use crate::{accounts, mail};
+use crate::mail;
 use async_imap::types::{Fetch, Flag, Name, NameAttribute};
 use futures_util::TryStreamExt;
 use std::time::Duration;
@@ -38,8 +39,44 @@ const FLAG_WINDOW: i64 = 400;
 const QUICK_TIMEOUT: Duration = Duration::from_secs(120);
 const FULL_TIMEOUT: Duration = Duration::from_secs(900);
 
-/// Łączy się z serwerem IMAP po TLS i loguje. Wspólne dla testu i synchronizacji.
+/// XOAUTH2 authenticator.
+///
+/// async-imap base64-encodes whatever `process` returns, so it gets the raw
+/// SASL string - handing it the already-encoded form would wrap it twice.
+///
+/// When a token is rejected the server answers with a challenge carrying an
+/// error document and waits for an empty line before it reports the failure,
+/// so the credentials go out once and every later turn is empty.
+struct XOAuth2 {
+    raw: String,
+    sent: bool,
+}
+
+impl async_imap::Authenticator for XOAuth2 {
+    type Response = Vec<u8>;
+
+    fn process(&mut self, _challenge: &[u8]) -> Vec<u8> {
+        if self.sent {
+            Vec::new()
+        } else {
+            self.sent = true;
+            self.raw.clone().into_bytes()
+        }
+    }
+}
+
+/// Łączy się z serwerem IMAP po TLS i loguje hasłem.
 pub async fn connect_session(host: &str, port: u16, login: &str, password: &str) -> Result<ImapSession> {
+    connect_with(host, port, login, &Secret::Password(password.to_string())).await
+}
+
+/// Connects and authenticates with whichever secret the account carries.
+pub async fn connect_with(
+    host: &str,
+    port: u16,
+    login: &str,
+    secret: &Secret,
+) -> Result<ImapSession> {
     if port == 143 {
         return Err(AppError::Other(
             "serwer oferuje tylko STARTTLS (port 143) - na razie obsługiwany jest bezpośredni TLS (zwykle port 993)".into(),
@@ -57,10 +94,24 @@ pub async fn connect_session(host: &str, port: u16, login: &str, password: &str)
         .await
         .map_err(|e| AppError::Other(format!("uścisk dłoni TLS z {host} nie powiódł się: {e}")))?;
     let client = async_imap::Client::new(stream);
-    client
-        .login(login, password)
-        .await
-        .map_err(|(e, _)| AppError::Other(format!("serwer odrzucił logowanie: {e}")))
+    match secret {
+        Secret::Password(password) => client
+            .login(login, password)
+            .await
+            .map_err(|(e, _)| AppError::Other(format!("serwer odrzucił logowanie: {e}"))),
+        Secret::OAuth(token) => client
+            .authenticate(
+                "XOAUTH2",
+                XOAuth2 {
+                    raw: crate::oauth::sasl_raw(login, token),
+                    sent: false,
+                },
+            )
+            .await
+            .map_err(|(e, _)| {
+                AppError::Other(format!("serwer odrzucił logowanie OAuth2: {e}"))
+            }),
+    }
 }
 
 /// Sprawdza poświadczenia bez zapisywania czegokolwiek.
@@ -202,9 +253,9 @@ pub async fn sync_account_mode(
         return Ok(());
     }
     let login = if login.is_empty() { email.clone() } else { login };
-    let password = accounts::get_password(&email)?;
+    let secret = auth::secret_for(&app, &email).await?;
 
-    let mut session = connect_session(&host, port, &login, &password).await?;
+    let mut session = connect_with(&host, port, &login, &secret).await?;
 
     // Lista folderów z serwera.
     let names: Vec<Name> = session.list(Some(""), Some("*")).await?.try_collect().await?;
@@ -693,8 +744,8 @@ pub async fn search_on_server(app: &AppHandle, criteria: String) -> Result<usize
     let mut pobrane = 0usize;
     for (account_id, email, login, host, port) in accounts {
         let login = if login.is_empty() { email.clone() } else { login };
-        let Ok(password) = accounts::get_password(&email) else { continue };
-        let mut session = connect_session(&host, port, &login, &password).await?;
+        let Ok(secret) = auth::secret_for(&app, &email).await else { continue };
+        let mut session = connect_with(&host, port, &login, &secret).await?;
 
         let folders: Vec<(i64, String, String)> = {
             let db = app.state::<Db>();

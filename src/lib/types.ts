@@ -118,6 +118,8 @@ export interface Contact {
 /** Szkic wiadomości otwarty w karcie kompozycji (stan lokalny UI). */
 export interface LocalDraft {
   localId: number;
+  /** Identyfikator kopii roboczej w bazie; null = jeszcze nic nie zapisano. */
+  savedId?: number | null;
   accountId: number;
   toAddrs: string;
   ccAddrs: string;
@@ -138,6 +140,22 @@ export interface DraftAttachment {
   mime: string;
   size: number;
   dataB64: string;
+}
+
+/** Kopia robocza odczytana z bazy (tabela `drafts`). */
+export interface StoredDraft {
+  id: number;
+  accountId: number;
+  toAddrs: string;
+  ccAddrs: string;
+  bccAddrs: string;
+  inReplyTo: string | null;
+  references: string | null;
+  subject: string;
+  bodyHtml: string;
+  isReply: boolean;
+  updatedAt: number;
+  attachments: DraftAttachment[];
 }
 
 export interface ComposeDraft {

@@ -84,3 +84,25 @@ pub fn delete_password(email: &str) -> Result<()> {
         Err(e) => Err(e.into()),
     }
 }
+
+/// Refresh tokens sit in the same keychain as the passwords, under a prefixed
+/// name so an account can hold both without one overwriting the other.
+fn oauth_key(email: &str) -> String {
+    format!("oauth2:{email}")
+}
+
+pub fn store_refresh_token(email: &str, token: &str) -> Result<()> {
+    entry(&oauth_key(email))?.set_password(token)?;
+    Ok(())
+}
+
+pub fn get_refresh_token(email: &str) -> Result<String> {
+    Ok(entry(&oauth_key(email))?.get_password()?)
+}
+
+pub fn delete_refresh_token(email: &str) -> Result<()> {
+    match entry(&oauth_key(email))?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}

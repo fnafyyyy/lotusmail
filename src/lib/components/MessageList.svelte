@@ -11,6 +11,9 @@
     messages,
     selectedId,
     holdId,
+    marked = [],
+    onmark,
+    onbulk,
     showCategories,
     category,
     counts,
@@ -31,6 +34,12 @@
     messages: MessageSummary[];
     selectedId: number | null;
     holdId: number | null;
+    /** Zaznaczone wiersze (Ctrl/Shift + klik) - identyfikatory wiadomości. */
+    marked?: number[];
+    /** Nowy zestaw zaznaczonych wierszy. */
+    onmark: (ids: number[]) => void;
+    /** Akcja na zaznaczeniu: „delete" | „read" | „unread". */
+    onbulk: (action: string) => void;
     showCategories: boolean;
     category: Category;
     /** Nieprzeczytane w każdej zakładce - liczniki na przyciskach. */
@@ -126,6 +135,61 @@
   let grouped = $derived(showCategories);
 
   let unseenShown = $derived(newAll ? unseen : unseen.slice(0, NEW_PREVIEW));
+
+  // Zaznaczanie wielu wiadomości. Kolejność zakresu dla Shift bierzemy
+  // z układu na ekranie, nie z tablicy `messages` - w widoku Smart Inbox
+  // lista jest rozbita na „Nowe" i „Przejrzane", więc sąsiedztwo wzrokowe
+  // i sąsiedztwo w danych to dwie różne rzeczy.
+  let visualOrder = $derived(grouped ? [...unseenShown, ...seen] : messages);
+  let markedSet = $derived(new Set(marked));
+  /// Punkt zaczepienia zakresu: ostatni wiersz kliknięty bez Shifta.
+  let anchorId: number | null = null;
+
+  function toggleMark(m: MessageSummary) {
+    anchorId = m.id;
+    onmark(markedSet.has(m.id) ? marked.filter((id) => id !== m.id) : [...marked, m.id]);
+  }
+
+  function markRange(m: MessageSummary) {
+    const order = visualOrder;
+    const to = order.findIndex((x) => x.id === m.id);
+    const from = anchorId == null ? -1 : order.findIndex((x) => x.id === anchorId);
+    if (to < 0) return;
+    if (from < 0) {
+      toggleMark(m);
+      return;
+    }
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    const range = order.slice(a, b + 1).map((x) => x.id);
+    // Zakres dokłada się do zaznaczenia, a nie zastępuje go - dzięki temu
+    // Ctrl i Shift dają się mieszać.
+    onmark([...new Set([...marked, ...range])]);
+  }
+
+  /// Czy zaznaczanie jest w toku - wtedy kwadraciki stoją odkryte na każdym
+  /// wierszu, żeby było widać, w co klikać.
+  let selecting = $derived(marked.length > 0);
+
+  function rowClick(e: MouseEvent, m: MessageSummary) {
+    // Kwadracik na miejscu awatara zaznacza bez sięgania po klawiaturę.
+    // Nie jest osobnym przyciskiem, bo wiersz sam jest przyciskiem, a tego
+    // się nie zagnieżdża - wystarczy sprawdzić, gdzie padło kliknięcie.
+    if ((e.target as Element | null)?.closest?.("[data-mark]")) {
+      toggleMark(m);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      toggleMark(m);
+      return;
+    }
+    if (e.shiftKey) {
+      markRange(m);
+      return;
+    }
+    anchorId = m.id;
+    if (marked.length) onmark([]);
+    onopen(m);
+  }
 
   // Menu kontekstowe (prawy przycisk myszy) na wiadomości.
   let ctx = $state<{ x: number; y: number; m: MessageSummary } | null>(null);
@@ -259,6 +323,26 @@
     </button>
   {/snippet}
 
+  {#snippet bulkButton(
+    icon: string,
+    label: string,
+    onclick: () => void,
+    danger = false,
+    title = "",
+  )}
+    <button
+      class="flex h-6.5 shrink-0 items-center gap-1.25 rounded-full text-[12px] font-semibold
+             whitespace-nowrap transition-colors {label ? 'px-2.5' : 'w-6.5 justify-center'}
+             {danger ? 'text-danger hover:bg-danger/10' : 'text-ink-soft hover:bg-surface'}"
+      {title}
+      aria-label={label || title}
+      {onclick}
+    >
+      <Icon name={icon} size={12} />
+      {label}
+    </button>
+  {/snippet}
+
   {#snippet groupHeader(
     label: string,
     count: number,
@@ -289,6 +373,41 @@
       </span>
     </button>
   {/snippet}
+
+  {#if marked.length > 0}
+    <div
+      class="mx-2 mb-1.5 flex shrink-0 items-center gap-1.5 rounded-xl bg-accent-soft px-3 py-1.5"
+      transition:slide={{ duration: 140 }}
+    >
+      <button
+        class="grid size-5 shrink-0 place-items-center rounded-md border-2 transition-colors
+               {marked.length === messages.length
+          ? 'border-accent bg-accent text-on-accent'
+          : 'border-accent/60 text-transparent hover:bg-accent/15'}"
+        title={marked.length === messages.length ? "Odznacz wszystkie" : "Zaznacz wszystkie"}
+        aria-label={marked.length === messages.length ? "Odznacz wszystkie" : "Zaznacz wszystkie"}
+        onclick={() =>
+          onmark(marked.length === messages.length ? [] : messages.map((m) => m.id))}
+      >
+        <Icon name="check" size={11} />
+      </button>
+      <span class="shrink-0 text-[12px] font-bold whitespace-nowrap text-accent">
+        Zaznaczono {marked.length}
+      </span>
+      <span class="flex-1"></span>
+      {@render bulkButton("inbox", "", () => onbulk("read"), false, "Oznacz jako przeczytane")}
+      {@render bulkButton("moon", "", () => onbulk("unread"), false, "Oznacz jako nieprzeczytane")}
+      {@render bulkButton("trash", "Usuń", () => onbulk("delete"), true, "Przenieś do Kosza")}
+      <button
+        class="grid size-6.5 place-items-center rounded-full text-muted hover:bg-rail hover:text-ink"
+        onclick={() => onmark([])}
+        aria-label="Anuluj zaznaczenie"
+        title="Anuluj zaznaczenie (Esc)"
+      >
+        <Icon name="x" size={12} />
+      </button>
+    </div>
+  {/if}
 
   <div
     class="msg-list min-h-0 flex-1 overflow-y-auto px-2 pb-2"
@@ -365,19 +484,45 @@
   {#snippet card(m: MessageSummary)}
     <button
       class="mb-0.75 flex w-full gap-2.75 rounded-xl px-3 py-2.75 text-left transition-colors
-             {selectedId === m.id ? 'bg-accent-soft' : 'hover:bg-rail'}"
+             {markedSet.has(m.id)
+        ? 'bg-accent-soft ring-2 ring-accent ring-inset'
+        : selectedId === m.id
+          ? 'bg-accent-soft'
+          : 'hover:bg-rail'}"
       data-mid={m.id}
-      onclick={() => onopen(m)}
+      onclick={(e) => rowClick(e, m)}
       oncontextmenu={(e) => openContext(e, m)}
       draggable="true"
       ondragstart={(e) => e.dataTransfer?.setData("text/lotus-id", String(m.id))}
     >
       <span
-        class="grid size-8.5 shrink-0 place-items-center rounded-[11px] text-xs font-bold
-               {theme.dark ? 'text-[#08120f]' : 'text-white'}"
-        style="background:{avatarColor(m.fromAddr, theme.dark)}"
+        data-mark
+        title={markedSet.has(m.id) ? "Odznacz wiadomość" : "Zaznacz wiadomość"}
+        class="mark relative grid size-8.5 shrink-0 place-items-center rounded-[11px] text-xs
+               font-bold {markedSet.has(m.id)
+          ? 'bg-accent text-on-accent'
+          : selecting
+            ? 'border-2 border-line text-transparent hover:border-accent'
+            : theme.dark
+              ? 'text-[#08120f]'
+              : 'text-white'}"
+        style={markedSet.has(m.id) || selecting
+          ? ""
+          : `background:${avatarColor(m.fromAddr, theme.dark)}`}
       >
-        {initials(m.fromName, m.fromAddr)}
+        {#if markedSet.has(m.id)}
+          <Icon name="check" size={15} />
+        {:else if selecting}
+          <Icon name="check" size={14} class="mark-box" />
+        {:else}
+          <span class="mark-initials">{initials(m.fromName, m.fromAddr)}</span>
+          <span
+            class="mark-box absolute inset-0 grid place-items-center rounded-[11px] bg-accent
+                   text-on-accent"
+          >
+            <Icon name="check" size={15} />
+          </span>
+        {/if}
       </span>
       <div class="min-w-0 flex-1">
         <div class="flex items-baseline gap-2">
@@ -420,18 +565,40 @@
   {#snippet compact(m: MessageSummary)}
     <button
       class="mb-0.25 flex w-full items-center gap-2.75 rounded-xl px-3 py-2 text-left transition-colors
-             {selectedId === m.id ? 'bg-accent-soft' : 'hover:bg-rail'}"
+             {markedSet.has(m.id)
+        ? 'bg-accent-soft ring-2 ring-accent ring-inset'
+        : selectedId === m.id
+          ? 'bg-accent-soft'
+          : 'hover:bg-rail'}"
       data-mid={m.id}
-      onclick={() => onopen(m)}
+      onclick={(e) => rowClick(e, m)}
       oncontextmenu={(e) => openContext(e, m)}
       draggable="true"
       ondragstart={(e) => e.dataTransfer?.setData("text/lotus-id", String(m.id))}
     >
       <span
-        class="grid size-6.5 shrink-0 place-items-center rounded-[9px] bg-rail text-[10.5px]
-               font-bold text-ink-soft"
+        data-mark
+        title={markedSet.has(m.id) ? "Odznacz wiadomość" : "Zaznacz wiadomość"}
+        class="mark relative grid size-6.5 shrink-0 place-items-center rounded-[9px] text-[10.5px]
+               font-bold {markedSet.has(m.id)
+          ? 'bg-accent text-on-accent'
+          : selecting
+            ? 'border-2 border-line text-transparent hover:border-accent'
+            : 'bg-rail text-ink-soft'}"
       >
-        {initials(m.fromName, m.fromAddr)}
+        {#if markedSet.has(m.id)}
+          <Icon name="check" size={12} />
+        {:else if selecting}
+          <Icon name="check" size={11} class="mark-box" />
+        {:else}
+          <span class="mark-initials">{initials(m.fromName, m.fromAddr)}</span>
+          <span
+            class="mark-box absolute inset-0 grid place-items-center rounded-[9px] bg-accent
+                   text-on-accent"
+          >
+            <Icon name="check" size={12} />
+          </span>
+        {/if}
       </span>
       <!-- Nadawca i data w pierwszym wierszu, temat w drugim. W jednej linii
            temat konkurował o miejsce z nadawcą i datą, więc obcinał się już
@@ -514,3 +681,18 @@
     sortOpen = false;
   }}
 />
+<style>
+  /* Kwadracik zaznaczania wychodzi spod awatara dopiero pod kursorem - na
+     spoczynku lista wygląda jak wcześniej. Gdy zaznaczanie już trwa, każdy
+     wiersz ma odkrytą ramkę, więc widać, w co klikać. */
+  .mark .mark-box {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  .mark:hover .mark-box {
+    opacity: 1;
+  }
+  .mark:hover .mark-initials {
+    opacity: 0.2;
+  }
+</style>

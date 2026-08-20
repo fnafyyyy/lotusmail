@@ -2,7 +2,8 @@
   export type View =
     | { kind: "unified" }
     | { kind: "folder"; folderId: number }
-    | { kind: "snoozed" };
+    | { kind: "snoozed" }
+    | { kind: "drafts" };
 </script>
 
 <script lang="ts">
@@ -14,6 +15,7 @@
     accounts,
     folders,
     view,
+    draftCount = 0,
     lastSyncLabel = "",
     syncStatus = "",
     onselect,
@@ -28,6 +30,8 @@
     accounts: Account[];
     folders: Folder[];
     view: View;
+    /** Ile kopii roboczych czeka na dokończenie. */
+    draftCount?: number;
     lastSyncLabel?: string;
     syncStatus?: string;
     onselect: (view: View) => void;
@@ -137,6 +141,15 @@
     onselect({ kind: "unified" }),
   )}
   {@render row(view.kind === "snoozed", "moon", "Drzemka", 0, () => onselect({ kind: "snoozed" }))}
+  {#if draftCount > 0 || view.kind === "drafts"}
+    {@render row(
+      view.kind === "drafts",
+      "edit",
+      "Kopie robocze",
+      draftCount,
+      () => onselect({ kind: "drafts" }),
+    )}
+  {/if}
   {@render row(false, "eraser", "Sprzątanie", 0, oncleanup)}
 
   <p class="px-3.5 pt-5 pb-1.5 text-[11px] font-bold tracking-[0.09em] text-muted uppercase">

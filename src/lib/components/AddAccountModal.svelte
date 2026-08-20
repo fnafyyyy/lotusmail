@@ -41,10 +41,21 @@
   let advanced = $state(false);
   let detected = $state<DetectedConfig | null>(null);
   let error = $state("");
+  // Logowanie OAuth2 (Microsoft). `oauthReady` mówi, czy jest wpisany
+  // identyfikator aplikacji - bez niego przycisk nie ma czego otworzyć.
+  let oauthReady = $state(false);
+  let oauthBusy = $state(false);
+  let oauthDone = $state(false);
+  api.oauthIsConfigured().then((v) => (oauthReady = v)).catch(() => {});
+
+  /** Czy to konto logujemy przez Microsoft zamiast hasłem. */
+  let useOauth = $derived(provider?.oauthOnly === true && oauthReady);
   let info = $state("");
 
   let emailValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
-  let ready = $derived(emailValid && password.length > 0 && imapHost.trim().length > 0);
+  let ready = $derived(
+    emailValid && (useOauth ? oauthDone : password.length > 0) && imapHost.trim().length > 0,
+  );
 
   function pick(p: Provider | null) {
     provider = p;
@@ -112,11 +123,43 @@
     }
   }
 
+  /// Otwiera przeglądarkę i czeka, aż użytkownik wróci z logowania.
+  /// Konto zakładamy dopiero potem - przerwane logowanie ma nie zostawiać
+  /// po sobie wpisu, do którego i tak nie ma tokenu.
+  async function signIn() {
+    error = "";
+    oauthBusy = true;
+    try {
+      await api.oauthSignIn(email.trim());
+      oauthDone = true;
+    } catch (e) {
+      error = String(e);
+    } finally {
+      oauthBusy = false;
+    }
+  }
+
   async function connect() {
     error = "";
     connecting = true;
     try {
       const user = login.trim() || email.trim();
+      if (useOauth) {
+        const account = await api.addAccount({
+          email: email.trim(),
+          displayName: displayName.trim(),
+          senderName: senderName.trim(),
+          login: user,
+          imapHost: imapHost.trim(),
+          imapPort,
+          smtpHost: smtpHost.trim(),
+          smtpPort,
+          authKind: "oauth2",
+          password: null,
+        });
+        onadded(account.id);
+        return;
+      }
       await api.testLogin(imapHost.trim(), imapPort, user, password);
       const account = await api.addAccount({
         email: email.trim(),
@@ -301,13 +344,40 @@
 
     {:else}
       <div class="flex-1 space-y-3 overflow-y-auto px-5 py-4" in:fade={{ duration: 140 }}>
-        {#if provider?.oauthOnly}
+        {#if provider?.oauthOnly && oauthReady}
+          <div class="rounded-xl bg-accent-soft px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-soft">
+            <p class="font-semibold">Microsoft wymaga logowania OAuth2.</p>
+            <p class="mt-1">
+              Otworzy się strona Microsoftu. Hasło zostaje u nich - lotusMail dostaje wyłącznie
+              token dostępu do poczty.
+            </p>
+            <button
+              class="mt-2.5 flex items-center gap-2 rounded-full bg-accent px-3.5 py-1.5 text-xs
+                     font-semibold text-on-accent disabled:opacity-40"
+              onclick={signIn}
+              disabled={!emailValid || oauthBusy || oauthDone}
+            >
+              {#if oauthBusy}
+                <Icon name="refresh" size={12} class="animate-spin" />
+                Czekam na Microsoft…
+              {:else if oauthDone}
+                <Icon name="check" size={12} />
+                Zalogowano
+              {:else}
+                Zaloguj przez Microsoft
+              {/if}
+            </button>
+            {#if !emailValid}
+              <p class="mt-1.5 text-[11px] text-muted">Najpierw wpisz adres poniżej.</p>
+            {/if}
+          </div>
+        {:else if provider?.oauthOnly}
           <div class="rounded-xl bg-danger/10 px-3.5 py-3 text-[12.5px] leading-relaxed text-danger">
             <p class="font-semibold">Microsoft wyłączył logowanie hasłem do IMAP.</p>
             <p class="mt-1">
-              Konta Outlook.com i Microsoft 365 wymagają logowania OAuth2, którego jeszcze nie ma
-              w lotusMailu (jest w planach). Jeśli Twoja firma nadal dopuszcza logowanie hasłem,
-              możesz spróbować poniżej.
+              Żeby zalogować się przez OAuth2, wklej najpierw identyfikator aplikacji Microsoft
+              w Ustawieniach. Jeśli Twoja firma nadal dopuszcza logowanie hasłem, możesz
+              spróbować poniżej.
             </p>
           </div>
         {:else if provider?.appPassword}
@@ -334,19 +404,21 @@
           />
         </label>
 
-        <label class="block">
-          <span class="mb-1 block text-xs font-semibold text-muted">
-            {provider?.appPassword ? "Hasło aplikacji" : "Hasło"}
-          </span>
-          <input
-            bind:value={password}
-            type="password"
-            class="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-accent"
-          />
-          <span class="mt-1 block text-[11px] text-muted">
-            Hasło trafia do Menedżera poświadczeń Windows, nie do bazy aplikacji.
-          </span>
-        </label>
+        {#if !useOauth}
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold text-muted">
+              {provider?.appPassword ? "Hasło aplikacji" : "Hasło"}
+            </span>
+            <input
+              bind:value={password}
+              type="password"
+              class="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+            <span class="mt-1 block text-[11px] text-muted">
+              Hasło trafia do Menedżera poświadczeń Windows, nie do bazy aplikacji.
+            </span>
+          </label>
+        {/if}
 
         <div class="grid grid-cols-2 gap-3">
           <label class="block">

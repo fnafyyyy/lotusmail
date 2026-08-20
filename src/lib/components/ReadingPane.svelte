@@ -121,25 +121,76 @@
     "-----wiadomość oryginalna-----",
   ];
 
-  /// Nagłówek cytatu w treści („Od: … Wysłano: … Temat: …" / „From: … Sent: …"),
-  /// rozpoznawany po samym tekście - atrybuty id/class bywają usuwane.
-  /// „Od:"/„From:" muszą mieć dwukropek, a „W dniu"/„Dnia" - domknięcie
-  /// w „napisał(a):". Bez tego wzorzec łapał zwykłe słowa zaczynające się od
-  /// „od" (choćby „odpowiedź"): cięcie wypadało w środku pierwszego zdania,
-  /// bezpiecznik od zbyt krótkiej treści rezygnował i mail szedł z cytatem.
-  function findQuoteHeader(lower: string): number {
-    const re = /(?:^|>)[^<>]{0,40}\b(?:(od|from)\s*:|(w dniu|dnia)\b)/g;
-    for (let m = re.exec(lower); m; m = re.exec(lower)) {
-      const window = lower.slice(m.index, m.index + 700);
-      const wrote = /napisa[łl]\(?a?\)?\s*:/.test(window);
-      if (m[2]) {
-        // Sama data to jeszcze nie cytat - dopiero „W dniu … napisał(a):".
-        if (wrote) return m.index;
+  /// Rzut treści bez znaczników: sam tekst plus mapa pozycji z powrotem do HTML-a.
+  ///
+  /// Szukanie nagłówka cytatu wprost w HTML-u zawodziło na mailach z Outlooka.
+  /// Między „From:" a „Subject:" leży tam cała lista DW - kilkadziesiąt adresów,
+  /// każdy w swoim `<a href="mailto:…">` ze stylami - i na wątku od przewoźnika
+  /// robiło z tego 4400 znaków. Żadne rozsądne okno dopasowania tego nie
+  /// obejmowało, więc cytat nie był rozpoznawany i mail szedł w całości.
+  /// W tekście te same nagłówki leżą tuż obok siebie.
+  function textProbe(html: string): { text: string; map: number[] } {
+    const chars: string[] = [];
+    const map: number[] = [];
+    /// Znacznik zostawia po sobie odstęp. Bez tego `<br/>` i końce akapitów
+    /// sklejały sąsiednie wyrazy („…prohibited.W dniu 2026-08-19…" bywało
+    /// „…prohibitedw dniu…"), przez co `\b` w szukanym wzorcu nie miał gdzie
+    /// trafić i cytaty „W dniu … napisał(a):" przechodziły niezauważone.
+    const gap = (at: number) => {
+      if (chars.length && chars[chars.length - 1] !== " ") {
+        chars.push(" ");
+        map.push(at);
+      }
+    };
+    for (let i = 0; i < html.length; i++) {
+      if (html.startsWith("<!--", i)) {
+        // Komentarze warunkowe Outlooka („<!--[if gte mso 9]>…") niosą całe
+        // arkusze stylów - do tekstu nie mają czego wnieść.
+        const end = html.indexOf("-->", i);
+        gap(i);
+        i = end < 0 ? html.length : end + 2;
         continue;
       }
-      const hasSent = /(wysłano|wyslano|sent)\s*:/.test(window);
-      const hasSubject = /(temat|subject)\s*:/.test(window);
-      if ((hasSent && hasSubject) || wrote) return m.index;
+      if (html[i] === "<") {
+        const end = html.indexOf(">", i);
+        gap(i);
+        i = end < 0 ? html.length : end;
+        continue;
+      }
+      if (html[i] === "&") {
+        const end = html.indexOf(";", i);
+        if (end > 0 && end - i <= 8) {
+          chars.push(" ");
+          map.push(i);
+          i = end;
+          continue;
+        }
+      }
+      chars.push(html[i]);
+      map.push(i);
+    }
+    return { text: chars.join("").toLowerCase(), map };
+  }
+
+  /// Nagłówek cytatu w treści („Od: … Wysłano: …" / „From: … Sent: …",
+  /// „W dniu … napisał(a):"). „Od:"/„From:" muszą mieć dwukropek, a „W dniu"
+  /// - domknięcie w „napisał(a):". Bez tego wzorzec łapał zwykłe słowa
+  /// zaczynające się od „od" (choćby „odpowiedź") i cięcie wypadało w środku
+  /// pierwszego zdania. Para „From:" + „Sent:" wystarcza za dowód - te dwa
+  /// nagłówki stoją obok siebie i w normalnym zdaniu się nie zdarzają;
+  /// „Subject:" bywa od nich odcięte listą odbiorców, więc go nie wymagamy.
+  function findQuoteHeader(html: string): number {
+    const { text, map } = textProbe(html);
+    const re = /\b(?:(od|from)\s*:|(w dniu|dnia)\b)/g;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      const near = text.slice(m.index, m.index + 400);
+      const wrote = /napisa[łl]\s*\(?\s*a?\s*\)?\s*:/.test(text.slice(m.index, m.index + 700));
+      if (m[2]) {
+        // Sama data to jeszcze nie cytat - dopiero „W dniu … napisał(a):".
+        if (wrote) return map[m.index];
+        continue;
+      }
+      if (/(wysłano|wyslano|sent)\s*:/.test(near) || wrote) return map[m.index];
     }
     return -1;
   }
@@ -151,7 +202,7 @@
       const i = lower.indexOf(marker);
       if (i >= 0 && (cut < 0 || i < cut)) cut = i;
     }
-    const byText = findQuoteHeader(lower);
+    const byText = findQuoteHeader(html);
     if (byText >= 0 && (cut < 0 || byText < cut)) cut = byText;
     if (cut < 0) return [html, null];
     // Cofnij się do początku znacznika i ewentualnej poprzedzającej linii <hr>.
@@ -160,8 +211,43 @@
     const hr = lower.lastIndexOf("<hr", start);
     if (hr >= 0 && start - hr < 220) start = hr;
     const main = html.slice(0, start).trim();
-    // Zbyt agresywne cięcie (nic nie zostało) → pokazujemy całość.
-    return main.length < 20 ? [html, null] : [main, html.slice(start)];
+    // Zbyt agresywne cięcie → pokazujemy całość. Liczy się widoczny tekst,
+    // nie długość HTML-a: przy przesłanym dalej mailu („Fw:") cała treść bywa
+    // cytatem, a sam nagłówek z pustymi znacznikami ma i tak swoje kilkaset
+    // znaków - po cięciu zostawało okno bez ani jednego słowa.
+    return textProbe(main).text.trim().length < 10 ? [html, null] : [main, html.slice(start)];
+  }
+
+  /// Znaczniki puste - nie mają czego domykać.
+  const VOID_TAGS = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+  ]);
+
+  /// Domknięcia dla znaczników zostawionych otwartych w uciętej treści.
+  ///
+  /// Cięcie wypada w środku dokumentu, więc widoczna część zwykle zostaje
+  /// z otwartymi `<div>`-ami (52 na 98 maili z cytatem w skrzynce), a ich
+  /// `</div>` zostają po stronie historii. Bez domknięcia ten nadmiarowy
+  /// `</div>` zamykał pojemnik z cytatem od środka: historia wypadała na
+  /// zewnątrz, przestawała podlegać `display:none` i widać ją było zawsze,
+  /// a przełącznik przełączał pustkę.
+  function closeOpenTags(html: string): string {
+    const stack: string[] = [];
+    const source = html.replace(/<!--[\s\S]*?-->/g, "");
+    const re = /<(\/?)([a-z][a-z0-9]*)\b[^>]*?(\/?)>/gi;
+    for (let m = re.exec(source); m; m = re.exec(source)) {
+      const name = m[2].toLowerCase();
+      if (VOID_TAGS.has(name) || m[3] === "/") continue;
+      if (m[1]) {
+        // Zamknięcie zdejmuje też wszystko, co zostało otwarte w środku.
+        const at = stack.lastIndexOf(name);
+        if (at >= 0) stack.length = at;
+      } else {
+        stack.push(name);
+      }
+    }
+    return stack.reverse().map((name) => `</${name}>`).join("");
   }
 
   function splitQuotedText(text: string): [string, string | null] {
@@ -291,13 +377,18 @@
       mainHtml = pre(m);
       quotedHtml = q ? pre(q) : null;
     }
-    // Przełącznik bez JavaScriptu (iframe jest w pełni sandboxowany).
+    // Przełącznik bez JavaScriptu (ramka jest w pełni sandboxowana): `<details>`
+    // radzi sobie sam. Wcześniej był ukryty checkbox i selektory sąsiedztwa
+    // (`:checked ~ .lm-quoted`) - te wymagały, żeby cytat pozostał rodzeństwem
+    // przełącznika, a przy poszarpanym HTML-u maila nie było na to szans.
+    // `<details>` nie jest `<div>`, więc błąkające się `</div>` z historii
+    // nie mają jak go zamknąć - najwyżej zostaną zignorowane.
     const inner =
       mainHtml +
       (quotedHtml
-        ? `<input type="checkbox" id="lm-q" class="lm-toggle">
-           <label for="lm-q" class="lm-label"><span class="lm-dots">•••</span><span class="lm-txt">Pokaż cytowaną historię</span></label>
-           <div class="lm-quoted">${quotedHtml}</div>`
+        ? closeOpenTags(mainHtml) +
+          `<details class="lm-quoted"><summary class="lm-label"><span class="lm-dots">•••</span></summary>` +
+          `<div class="lm-quoted-body">${quotedHtml}</div></details>`
         : "");
     const ownColors = b.html ? declaresOwnColors(b.html) : false;
     const invert = theme.dark && ownColors;
@@ -317,16 +408,16 @@
       img{max-width:100%;height:auto} a{color:${c.link}}
       table{border-collapse:collapse}
       blockquote{border-left:3px solid ${c.quote};margin-left:0;padding-left:12px;color:${c.quoteFg}}
-      .lm-toggle{position:absolute;opacity:0;pointer-events:none}
-      .lm-label{display:inline-flex;align-items:center;gap:8px;margin:18px 0 0;padding:3px 12px;
+      .lm-quoted{margin-top:18px}
+      .lm-label{display:inline-flex;align-items:center;gap:8px;padding:3px 12px;
         border-radius:999px;background:${c.quote};color:${c.quoteFg};font-size:12px;
-        line-height:1.8;cursor:pointer;user-select:none}
+        line-height:1.8;cursor:pointer;user-select:none;list-style:none;width:fit-content}
+      .lm-label::-webkit-details-marker{display:none}
+      .lm-label::after{content:"Pokaż cytowaną historię"}
+      .lm-quoted[open] > .lm-label::after{content:"Ukryj cytowaną historię"}
       .lm-dots{letter-spacing:1px}
-      .lm-quoted{display:none;margin-top:14px;padding-left:14px;
+      .lm-quoted-body{margin-top:14px;padding-left:14px;
         border-left:3px solid ${c.quote};color:${c.quoteFg}}
-      .lm-toggle:checked ~ .lm-quoted{display:block}
-      .lm-toggle:checked ~ .lm-label .lm-txt{visibility:hidden;width:0;display:none}
-      .lm-toggle:checked ~ .lm-label::after{content:"Ukryj cytowaną historię"}
     </style></head><body>${inner}</body></html>`;
   }
 </script>

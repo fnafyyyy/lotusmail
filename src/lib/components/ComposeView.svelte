@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { open } from "@tauri-apps/plugin-dialog";
   import { api, initials } from "$lib/api";
   import { SpellChecker, spellReady, type SpellHit } from "$lib/spell";
+  import { TypeGlow } from "$lib/typeglow";
   import type { Account, Contact, LocalDraft } from "$lib/types";
   import Icon from "./Icon.svelte";
 
@@ -13,6 +14,7 @@
     embedded = false,
     onsend,
     onclose,
+    ondiscard,
     ondetach = null,
   }: {
     draft: LocalDraft;
@@ -20,7 +22,10 @@
     /** true = szkic obok wiadomości (prawa połowa), nie osobna karta. */
     embedded?: boolean;
     onsend: (sendAt: number | null) => void;
+    /** Zamknięcie edytora - treść zostaje w kopiach roboczych. */
     onclose: () => void;
+    /** Wyrzucenie szkicu razem z kopią roboczą. */
+    ondiscard: () => void;
     ondetach?: (() => void) | null;
   } = $props();
 
@@ -93,6 +98,35 @@
     draft.bodyHtml = editor.innerHTML;
   }
 
+  // Treść wsiąka do edytora tylko przy przełączeniu szkicu; z powrotem idzie
+  // przez `oninput`. Dwustronne wiązanie `bind:innerHTML` potrafiło zostawić
+  // w edytorze treść poprzedniego szkicu (element bywa ten sam, gdy nowy szkic
+  // wchodzi na miejsce starego) i przestawiało kursor przy każdym zapisie.
+  let seeded = -1;
+  $effect(() => {
+    const id = draft.localId;
+    if (!editor || seeded === id) return;
+    seeded = id;
+    editor.innerHTML = untrack(() => draft.bodyHtml);
+  });
+
+  // Miękkie pojawianie się liter - duszek nad świeżo wpisanym znakiem.
+  let glow: TypeGlow | null = null;
+  $effect(() => {
+    if (!editor) return;
+    glow = new TypeGlow(editor);
+    return () => {
+      glow?.destroy();
+      glow = null;
+    };
+  });
+
+  // Cytowana historia bywa dłuższa niż sam mail (wątek z Outlooka potrafi mieć
+  // kilkadziesiąt tysięcy znaków), więc domyślnie jest zwinięta. Zwijanie jest
+  // czysto wizualne - do wysyłki idzie cała treść razem z cytatem.
+  let quoteOpen = $state(false);
+  let hasQuote = $derived(draft.bodyHtml.includes("lm-quote"));
+
   // Sprawdzanie pisowni: słownik systemowy Windows, podkreślenia rysowane
   // bez ingerencji w treść (CSS Custom Highlight API).
   let spell: SpellChecker | null = null;
@@ -115,7 +149,8 @@
 
   onDestroy(() => spell?.destroy());
 
-  function onBodyInput() {
+  function onBodyInput(e: Event) {
+    glow?.onInput(e as InputEvent);
     draft.bodyHtml = editor.innerHTML;
     spellMenu = null;
     if (spellOn) spell?.schedule();
@@ -281,8 +316,8 @@
           <button
             class="grid size-7 place-items-center rounded-full text-muted hover:bg-rail hover:text-ink"
             onclick={onclose}
-            aria-label="Zamknij odpowiedź"
-            title="Zamknij odpowiedź"
+            aria-label="Zamknij edytor"
+            title="Zamknij - treść zostanie w kopiach roboczych"
           >
             <Icon name="x" size={14} />
           </button>
@@ -412,7 +447,6 @@
       <div
         bind:this={editor}
         contenteditable="true"
-        bind:innerHTML={draft.bodyHtml}
         role="textbox"
         aria-multiline="true"
         aria-label="Treść wiadomości"
@@ -427,7 +461,8 @@
         }}
         ondragleave={() => (dropActive = false)}
         ondrop={onDrop}
-        class="editor min-h-0 flex-1 overflow-y-auto px-5 py-3 text-sm leading-relaxed outline-none
+        class="editor min-h-0 flex-1 overflow-y-auto px-5 py-3.5 text-[15px] leading-[1.7]
+               outline-none {quoteOpen ? '' : 'quote-collapsed'}
                {dropActive ? 'bg-accent-soft/40 ring-2 ring-accent ring-inset' : ''}"
       ></div>
 
@@ -511,6 +546,20 @@
         </div>
       {/if}
 
+      {#if hasQuote}
+        <div class="shrink-0 px-5 pb-2">
+          <button
+            class="flex h-6.5 items-center gap-1.5 rounded-full bg-rail px-3 text-[12px]
+                   font-semibold text-ink-soft transition-colors hover:text-ink"
+            onclick={() => (quoteOpen = !quoteOpen)}
+            title="Cytat idzie w mailu niezależnie od tego, czy jest tu widoczny"
+          >
+            <Icon name="quote" size={12} />
+            {quoteOpen ? "Ukryj cytowaną historię" : "Pokaż cytowaną historię"}
+          </button>
+        </div>
+      {/if}
+
       <footer class="relative flex items-center gap-2 border-t border-line px-5 py-3">
         <button
           class="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-on-accent
@@ -546,7 +595,7 @@
         <button
           class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-muted
                  hover:bg-paper hover:text-danger"
-          onclick={onclose}
+          onclick={ondiscard}
         >
           <Icon name="trash" size={14} />
           Odrzuć
@@ -583,6 +632,16 @@
 />
 
 <style>
+  /* Zwinięta historia znika tylko z oczu - `draft.bodyHtml` zostaje kompletny. */
+  .editor.quote-collapsed :global(.lm-quote),
+  .editor.quote-collapsed :global(.lm-quote-head) {
+    display: none;
+  }
+  .editor :global(.lm-quote-head) {
+    color: var(--muted);
+    font-size: 0.92em;
+    margin-bottom: 0.35em;
+  }
   .editor :global(blockquote) {
     border-left: 3px solid var(--line);
     margin: 0.4em 0;

@@ -60,11 +60,23 @@
   let rules = $state<Rule[]>([]);
   let notify = $state(true);
   let notifyPrimaryOnly = $state(false);
+  // Identyfikator aplikacji Microsoft dla logowania OAuth2. Każda instalacja
+  // rejestruje własną - program na komputerze nie ma gdzie schować sekretu,
+  // więc nie da się rozdać jednego wspólnego.
+  let oauthClientId = $state("");
+  let oauthSaved = $state(false);
+
+  async function saveClientId() {
+    await api.setSetting("oauth_client_id", oauthClientId.trim());
+    oauthSaved = true;
+    setTimeout(() => (oauthSaved = false), 2000);
+  }
 
   onMount(() => {
     api.listRules().then((r) => (rules = r));
     api.getSetting("notify").then((v) => (notify = v !== "0"));
     api.getSetting("notify_primary_only").then((v) => (notifyPrimaryOnly = v === "1"));
+    api.getSetting("oauth_client_id").then((v) => (oauthClientId = v ?? ""));
   });
 
   /// Przełączniki zapisują się od razu - bez czekania na „Zapisz".
@@ -279,6 +291,30 @@
         </div>
         <div class="h-px bg-line"></div>
       {/if}
+      <div>
+        <p class="text-xs font-semibold text-ink-soft">Logowanie Microsoft (OAuth2)</p>
+        <p class="mb-2 text-[11px] leading-relaxed text-muted">
+          Konta Outlook.com i Microsoft 365 nie przyjmują już hasła. Zarejestruj aplikację
+          w Microsoft Entra (typ „Public client/native", adres powrotu
+          <span class="font-mono">http://localhost</span>) i wklej tutaj jej Application (client) ID.
+        </p>
+        <div class="flex items-center gap-2">
+          <input
+            bind:value={oauthClientId}
+            placeholder="00000000-0000-0000-0000-000000000000"
+            class="min-w-0 flex-1 rounded-lg border border-line bg-paper px-3 py-2 font-mono
+                   text-[12px] outline-none placeholder:text-muted focus:border-accent"
+          />
+          <button
+            class="shrink-0 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-on-accent
+                   disabled:opacity-40"
+            onclick={saveClientId}
+          >
+            {oauthSaved ? "Zapisano" : "Zapisz"}
+          </button>
+        </div>
+      </div>
+      <div class="h-px bg-line"></div>
       <div>
         <p class="text-xs font-semibold text-ink-soft">Powiadomienia</p>
         <p class="mb-2 text-[11px] leading-relaxed text-muted">

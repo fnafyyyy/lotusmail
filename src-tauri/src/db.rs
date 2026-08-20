@@ -198,6 +198,36 @@ fn migrate(conn: &Connection) -> Result<()> {
         )?;
         conn.pragma_update(None, "user_version", 16)?;
     }
+    if version < 17 {
+        // Kopie robocze. Trzymamy je lokalnie (nie w folderze Szkice na
+        // serwerze), bo edytor zapisuje przy każdym uderzeniu w klawiaturę -
+        // APPEND przez IMAP przy każdej literze byłby nie do zniesienia.
+        // `refs` zamiast `references`, bo to słowo kluczowe SQL-a.
+        conn.execute_batch(
+            "CREATE TABLE drafts (
+                 id          INTEGER PRIMARY KEY,
+                 account_id  INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                 to_addrs    TEXT NOT NULL DEFAULT '',
+                 cc_addrs    TEXT NOT NULL DEFAULT '',
+                 bcc_addrs   TEXT NOT NULL DEFAULT '',
+                 in_reply_to TEXT,
+                 refs        TEXT,
+                 subject     TEXT NOT NULL DEFAULT '',
+                 body_html   TEXT NOT NULL DEFAULT '',
+                 is_reply    INTEGER NOT NULL DEFAULT 0,
+                 updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+             );
+             CREATE TABLE draft_attachments (
+                 id       INTEGER PRIMARY KEY,
+                 draft_id INTEGER NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+                 filename TEXT NOT NULL,
+                 mime     TEXT NOT NULL,
+                 data     BLOB NOT NULL
+             );
+             CREATE INDEX idx_draft_attachments_draft ON draft_attachments(draft_id)",
+        )?;
+        conn.pragma_update(None, "user_version", 17)?;
+    }
     Ok(())
 }
 

@@ -18,6 +18,7 @@ import type {
   OutlookSignature,
   Rule,
   SortKey,
+  StoredDraft,
   SyncApplyResult,
   SpellError,
 } from "./types";
@@ -26,6 +27,9 @@ export const api = {
   listAccounts: () => invoke<Account[]>("list_accounts"),
   addAccount: (newAccount: NewAccount) => invoke<Account>("add_account", { newAccount }),
   removeAccount: (id: number) => invoke<void>("remove_account", { id }),
+  /** Otwiera okno logowania Microsoftu i zapamiętuje token odświeżania. */
+  oauthSignIn: (email: string) => invoke<void>("oauth_sign_in", { email }),
+  oauthIsConfigured: () => invoke<boolean>("oauth_is_configured"),
   detectSettings: (email: string) => invoke<DetectedConfig>("detect_settings", { email }),
   testLogin: (host: string, port: number, login: string, password: string) =>
     invoke<void>("test_login", { host, port, login, password }),
@@ -65,6 +69,25 @@ export const api = {
     invoke<MessageSummary[]>("search_messages", { query }),
   searchServer: (query: string) => invoke<number>("search_server", { query }),
   queueSend: (draft: ComposeDraft) => invoke<number>("queue_send", { draft }),
+  /** Zapisuje kopię roboczą (bez `id` zakłada nową) i oddaje jej identyfikator. */
+  saveDraft: (draft: {
+    id: number | null;
+    accountId: number;
+    toAddrs: string;
+    ccAddrs: string;
+    bccAddrs: string;
+    inReplyTo: string | null;
+    references: string | null;
+    subject: string;
+    bodyHtml: string;
+    isReply: boolean;
+    attachments: DraftAttachment[];
+  }) => invoke<number>("save_draft", { draft }),
+  /** Lista kopii roboczych; załączniki bez treści (sama nazwa i rozmiar). */
+  listDrafts: () => invoke<StoredDraft[]>("list_drafts"),
+  /** Jeden szkic w całości - do wczytania z powrotem do edytora. */
+  getDraft: (id: number) => invoke<StoredDraft>("get_draft", { id }),
+  deleteDraft: (id: number) => invoke<void>("delete_draft", { id }),
   cleanupScan: (opts: {
     accountId?: number | null;
     minCount?: number;

@@ -4,13 +4,13 @@
 //! z `send_at` w przyszłości - „wyślij później"), a ten moduł wysyła je
 //! przez SMTP konta i oznacza status sent/failed.
 
-use crate::accounts;
+use crate::auth::{self, Secret};
 use crate::db::Db;
 use crate::error::{AppError, Result};
 use crate::sync;
 use lettre::message::header::{ContentDisposition, ContentType};
 use lettre::message::{Mailbox, MultiPart, SinglePart};
-use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use rusqlite::OptionalExtension;
 use tauri::{AppHandle, Emitter, Manager};
@@ -178,8 +178,8 @@ async fn append_to_sent(app: &AppHandle, account_id: i64, raw: &[u8]) -> Result<
     };
 
     let login = if login.is_empty() { email.clone() } else { login };
-    let password = accounts::get_password(&email)?;
-    let mut session = sync::connect_session(&host, port, &login, &password).await?;
+    let secret = auth::secret_for(app, &email).await?;
+    let mut session = sync::connect_with(&host, port, &login, &secret).await?;
     // Własny mail jest z definicji przeczytany - bez `\Seen` folder wysłanych
     // pokazywałby licznik nieprzeczytanych.
     let appended = session
@@ -216,7 +216,7 @@ async fn send_one(app: &AppHandle, mail: &QueuedMail) -> Result<Vec<u8>> {
         ));
     }
     let login = if login.is_empty() { email.clone() } else { login };
-    let password = accounts::get_password(&email)?;
+    let secret = auth::secret_for(app, &email).await?;
 
     let from_addr = email
         .parse()
@@ -329,8 +329,19 @@ async fn send_one(app: &AppHandle, mail: &QueuedMail) -> Result<Vec<u8>> {
         AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host)
     }
     .map_err(|e| AppError::Other(format!("połączenie SMTP z {host}: {e}")))?
-    .credentials(Credentials::new(login, password))
-    .port(port)
+    .port(port);
+    // lettre builds the XOAUTH2 string itself from the user and the "password",
+    // so an access token goes in the same slot - only the mechanism differs.
+    // It has to be named explicitly, otherwise lettre negotiates PLAIN and the
+    // server rejects the token as a malformed password.
+    let transport = match &secret {
+        Secret::Password(password) => {
+            transport.credentials(Credentials::new(login, password.clone()))
+        }
+        Secret::OAuth(token) => transport
+            .credentials(Credentials::new(login, token.clone()))
+            .authentication(vec![Mechanism::Xoauth2]),
+    }
     .build();
 
     // Surowa postać musi powstać przed wysyłką - `send` przejmuje wiadomość.

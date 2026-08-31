@@ -261,6 +261,33 @@
     return [lines.slice(0, idx).join("\n").trimEnd(), lines.slice(idx).join("\n")];
   }
 
+  /// Woła `use`, gdy ramka ma już dokument ze `srcdoc` - nie startowe
+  /// `about:blank`.
+  ///
+  /// Nie da się na to czekać zdarzeniem `load`: ono przychodzi dopiero po
+  /// pobraniu wszystkich obrazków maila, a stopka wskazująca serwer, który
+  /// nie odpowiada, trzyma je aż do sieciowego timeoutu (nasza własna
+  /// `www.wrolot.com.pl` z logo w każdej firmowej stopce właśnie taka jest).
+  /// Do tego czasu karta w konwersacji zostawała paskiem kilku pikseli,
+  /// a odnośniki nie reagowały na kliknięcia. Sam dokument jest sparsowany
+  /// dużo wcześniej, więc pytamy o niego co klatkę.
+  function whenReady(el: HTMLIFrameElement, use: (doc: Document) => void) {
+    let raf = 0;
+    let tries = 0;
+    const poll = () => {
+      const doc = el.contentDocument;
+      // Pomiar na `about:blank` dałby 8 px, a obserwator wylądowałby na ciele,
+      // które za chwilę zostanie wymienione na treść maila.
+      if (doc && doc.URL !== "about:blank" && doc.body) {
+        use(doc);
+      } else if (tries++ < 600) {
+        raf = requestAnimationFrame(poll);
+      }
+    };
+    poll();
+    return () => cancelAnimationFrame(raf);
+  }
+
   /// Otwiera odnośniki z treści maila w systemowej przeglądarce.
   ///
   /// Ramka jest sandboxowana, więc samo kliknięcie nic nie daje: `target="_blank"`
@@ -294,10 +321,11 @@
     };
 
     el.addEventListener("load", attach);
-    if (el.contentDocument?.readyState === "complete") attach();
+    const stopPolling = whenReady(el, attach);
 
     return {
       destroy() {
+        stopPolling();
         doc?.removeEventListener("click", onClick, true);
         el.removeEventListener("load", attach);
       },
@@ -344,10 +372,11 @@
     };
 
     el.addEventListener("load", onload);
-    if (el.contentDocument?.readyState === "complete") onload();
+    const stopPolling = whenReady(el, onload);
 
     return {
       destroy() {
+        stopPolling();
         observer?.disconnect();
         el.removeEventListener("load", onload);
       },
@@ -390,18 +419,21 @@
           `<details class="lm-quoted"><summary class="lm-label"><span class="lm-dots">•••</span></summary>` +
           `<div class="lm-quoted-body">${quotedHtml}</div></details>`
         : "");
+    // Mail z własnymi kolorami idzie na ekran w oryginale - na białym tle,
+    // tak samo jak w Gmailu czy Thunderbirdzie. Wcześniej ciemny motyw
+    // odwracał mu barwy (`filter: invert(0.92) hue-rotate(180deg)` na `html`
+    // plus kontr-inwersja obrazków), ale kontr-inwersja sięgała tylko `<img>`
+    // i stylu `background-image`. Tła wstawiane atrybutem `background=` na
+    // `<td>` - w mailach Google idzie tak połowa grafiki, z awatarem
+    // i gradientami włącznie - zostawały odwrócone: awatar wychodził
+    // w negatywie, a żółty gradient robił się ciemną plamą zjadającą tekst
+    // pod spodem. Jasna karta w ciemnym oknie jest mniejszym złem.
     const ownColors = b.html ? declaresOwnColors(b.html) : false;
-    const invert = theme.dark && ownColors;
     const c =
       theme.dark && !ownColors
         ? { bg: "#141d22", fg: "#c6d3da", link: "#4dc0b2", quote: "#1e2a31", quoteFg: "#8195a1" }
         : { bg: "#ffffff", fg: "#2b3a44", link: "#0d5f6e", quote: "#eef2f4", quoteFg: "#5b6b76" };
-    const invertCss = invert
-      ? `html{filter:invert(0.92) hue-rotate(180deg);background:#ffffff}
-         img,video,svg,[style*="background-image"]{filter:invert(1.087) hue-rotate(180deg)}`
-      : "";
     return `<!doctype html><html><head><meta charset="utf-8"><style>
-      ${invertCss}
       body{font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:15px;
            background:${c.bg};color:${c.fg};margin:0;padding:4px 38px 30px;line-height:1.7;
            word-wrap:break-word}

@@ -1,7 +1,7 @@
 [package]
 # Nazwa pakietu = nazwa pliku wykonywalnego, widoczna w Menedżerze zadań.
 name = "LotusMail"
-version = "0.1.3"
+version = "0.1.4"
 description = "Lekki klient poczty łączący funkcje Outlooka i Sparka"
 authors = ["Adrian Pachura"]
 edition = "2021"
@@ -78,7 +78,11 @@ windows = { version = "0.62", features = [
     "Win32_UI_Shell",
     "Win32_Globalization",
     "Win32_System_Com",
+    # Dymki wysyłamy sami (patrz notify.rs) - tylko tak da się nadać im tag,
+    # bez którego Centrum powiadomień nie potrafi ich zamknąć.
+    "Data_Xml_Dom",
+    "UI_Notifications",
+    "Foundation",
 ] }
 winreg = "0.56.0"
-tauri-winrt-notification = "0.8.1"
 

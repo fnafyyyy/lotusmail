@@ -136,24 +136,74 @@ fn activate(app: &AppHandle, message_id: Option<i64>) {
     }
 }
 
+/// Znaki, które w XML-u dymka muszą być encjami - temat maila potrafi
+/// zawierać `&` albo `<`, a wtedy cały dokument nie przechodzi parsowania
+/// i powiadomienie w ogóle się nie pokazuje.
+#[cfg(windows)]
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Na Windowsie wysyłamy dymek sami, z identyfikatorem aplikacji. Wtyczka
 /// Tauri celowo go pomija poza wersją instalacyjną, przez co system podpisywał
 /// powiadomienia nazwą procesu uruchamiającego (np. „PowerShell").
+///
+/// Budujemy go wprost na WinRT zamiast przez `tauri-winrt-notification`, bo ta
+/// biblioteka nie pozwala nadać dymkowi **tagu**, a bez tagu Centrum
+/// powiadomień nie ma jak zaadresować pojedynczego wpisu: „X" wywołuje
+/// `Remove(tag, group, aumid)`, które z pustym tagiem kończy się błędem
+/// „Parametr jest niepoprawny" - powiadomienia zostawały wtedy w Centrum na
+/// zawsze, bo nic nie było w stanie ich stamtąd usunąć.
+///
+/// Tag jest przy okazji identyfikatorem wiadomości, więc powtórne
+/// powiadomienie o tym samym mailu zastępuje poprzednie zamiast dokładać
+/// kolejny wpis.
 #[cfg(windows)]
 fn show(app: &AppHandle, title: &str, body: &str, message_id: Option<i64>) {
-    use tauri_winrt_notification::{Duration, Sound, Toast};
+    use windows::core::HSTRING;
+    use windows::Data::Xml::Dom::XmlDocument;
+    use windows::Foundation::TypedEventHandler;
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
     let handle = app.clone();
-    let result = Toast::new(&app.config().identifier)
-        .title(title)
-        .text1(body)
-        .sound(Some(Sound::Default))
-        .duration(Duration::Short)
-        .on_activated(move |_action| {
+    let identifier = app.config().identifier.clone();
+    let result = (|| -> windows::core::Result<()> {
+        let xml = format!(
+            r#"<toast duration="short"><visual><binding template="ToastGeneric">
+<text id="1">{}</text><text id="2">{}</text></binding></visual>
+<audio src="ms-winsoundevent:Notification.Default"/></toast>"#,
+            xml_escape(title),
+            xml_escape(body)
+        );
+        let doc = XmlDocument::new()?;
+        doc.LoadXml(&HSTRING::from(&xml))?;
+        let toast = ToastNotification::CreateToastNotification(&doc)?;
+
+        // Limit tagu to 64 znaki; oba warianty mieszczą się z zapasem.
+        let tag = match message_id {
+            Some(id) => format!("msg-{id}"),
+            None => format!(
+                "batch-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            ),
+        };
+        toast.SetTag(&HSTRING::from(&tag))?;
+        toast.SetGroup(&HSTRING::from("nowa-poczta"))?;
+
+        toast.Activated(&TypedEventHandler::new(move |_, _| {
             activate(&handle, message_id);
             Ok(())
-        })
-        .show();
+        }))?;
+
+        ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(&identifier))?
+            .Show(&toast)
+    })();
     match result {
         Ok(()) => eprintln!("[notify] dymek: {title} / {body}"),
         Err(e) => {

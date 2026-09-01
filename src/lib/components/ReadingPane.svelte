@@ -419,21 +419,28 @@
           `<details class="lm-quoted"><summary class="lm-label"><span class="lm-dots">•••</span></summary>` +
           `<div class="lm-quoted-body">${quotedHtml}</div></details>`
         : "");
-    // Mail z własnymi kolorami idzie na ekran w oryginale - na białym tle,
-    // tak samo jak w Gmailu czy Thunderbirdzie. Wcześniej ciemny motyw
-    // odwracał mu barwy (`filter: invert(0.92) hue-rotate(180deg)` na `html`
-    // plus kontr-inwersja obrazków), ale kontr-inwersja sięgała tylko `<img>`
-    // i stylu `background-image`. Tła wstawiane atrybutem `background=` na
-    // `<td>` - w mailach Google idzie tak połowa grafiki, z awatarem
-    // i gradientami włącznie - zostawały odwrócone: awatar wychodził
-    // w negatywie, a żółty gradient robił się ciemną plamą zjadającą tekst
-    // pod spodem. Jasna karta w ciemnym oknie jest mniejszym złem.
     const ownColors = b.html ? declaresOwnColors(b.html) : false;
+    const invert = theme.dark && ownColors;
     const c =
       theme.dark && !ownColors
         ? { bg: "#141d22", fg: "#c6d3da", link: "#4dc0b2", quote: "#1e2a31", quoteFg: "#8195a1" }
         : { bg: "#ffffff", fg: "#2b3a44", link: "#0d5f6e", quote: "#eef2f4", quoteFg: "#5b6b76" };
+    // Kontr-inwersja tylko dla elementów zastępowanych. `filter` odwraca
+    // element **razem z zawartością**, więc nałożony na kontener z tłem
+    // obrazkowym psuł dwie rzeczy naraz: tekst w środku wracał do ciemnej
+    // barwy (ciemny na ciemnym), a tło zagnieżdżone w innym tle dostawało
+    // inwersję dwa razy, czyli czysty negatyw - w mailu Google awatar siedzi
+    // w komórce z gradientem i wychodził dokładnie tak. Filtrem się tego nie
+    // rozdzieli (nie ma sposobu, żeby odwrócić samo tło), więc tła obrazkowe
+    // przy inwersji po prostu gasimy: zostaje po nich kolor tła komórki,
+    // odwrócony jak reszta strony. `!important`, bo idą ze stylu inline.
+    const invertCss = invert
+      ? `html{filter:invert(0.92) hue-rotate(180deg);background:#ffffff}
+         img,video,svg{filter:invert(1.087) hue-rotate(180deg)}
+         [style*="background-image"]{background-image:none !important}`
+      : "";
     return `<!doctype html><html><head><meta charset="utf-8"><style>
+      ${invertCss}
       body{font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:15px;
            background:${c.bg};color:${c.fg};margin:0;padding:4px 38px 30px;line-height:1.7;
            word-wrap:break-word}

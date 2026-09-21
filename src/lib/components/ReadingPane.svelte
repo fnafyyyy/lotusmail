@@ -53,6 +53,14 @@
     bodies = body ? { [id]: body } : {};
   });
 
+  // Lista odbiorców jest w treści (`MessageBody`), nie w podsumowaniu -
+  // dopóki treść nie dojedzie, pokazujemy wielokropek.
+  function recipientsOf(id: number): string {
+    const b = bodies[id];
+    if (!b) return "…";
+    return b.toAddrs.trim() || "(ukryci odbiorcy)";
+  }
+
   async function toggle(m: MessageSummary) {
     const next = new Set(expanded);
     if (next.has(m.id)) {
@@ -105,6 +113,33 @@
 
   // Mail deklarujący własne kolory dostaje w ciemnym motywie inteligentną
   // inwersję (jak Gmail); maile bez własnych kolorów - paletę aplikacji.
+  // Emotki to kolorowe glify czcionki, więc inwersja strony robi z nich
+  // negatyw tak samo jak z obrazków - a `filter` da się nałożyć tylko na
+  // element, nie na znak. Przy inwersji owijamy więc każdą sekwencję emoji
+  // w `<span class="lm-emoji">` z kontr-inwersją. Bierzemy tylko znaki
+  // o domyślnej prezentacji emoji (`Emoji_Presentation`) albo wymuszonej
+  // selektorem U+FE0F, bo piktogramy tekstowe (©, ™, →) rysuje zwykła
+  // czcionka kolorem tekstu i kontr-inwersja by je zgasiła. Do tego flagi
+  // (para Regional Indicator), klawisze (#️⃣) i sekwencje ZWJ (👨‍👩‍👧).
+  const EMOJI_RE =
+    /\p{Regional_Indicator}{2}|[#*0-9]\u{FE0F}?\u{20E3}|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\u{FE0F})(?:\p{Emoji_Modifier}|\u{FE0F})*(?:\u{200D}(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})\u{FE0F}?\p{Emoji_Modifier}?)*/gu;
+  // Sekwencja znaczników albo fragment tekstu między nimi.
+  const TAG_OR_TEXT_RE = /<[^>]*>|[^<]+/g;
+
+  function wrapEmoji(html: string): string {
+    return html.replace(TAG_OR_TEXT_RE, (part) => {
+      if (part.startsWith("<")) return part;
+      // Emotki zapisane encją numeryczną (`&#128512;`, `&#x1F600;`) też mają
+      // stać się znakiem - dokument jest w UTF-8, więc to bezpieczne, a poniżej
+      // U+2000 nic nie ruszamy, żeby nie odkodować `&#60;` na `<`.
+      const text = part.replace(/&#(x[0-9a-f]+|\d+);/gi, (m, v: string) => {
+        const cp = v[0].toLowerCase() === "x" ? parseInt(v.slice(1), 16) : parseInt(v, 10);
+        return cp >= 0x2000 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+      });
+      return text.replace(EMOJI_RE, (e) => `<span class="lm-emoji">${e}</span>`);
+    });
+  }
+
   function declaresOwnColors(html: string): boolean {
     return /bgcolor\s*=|background(?:-color)?\s*:|[^-]color\s*:/i.test(html);
   }
@@ -436,9 +471,10 @@
     // odwrócony jak reszta strony. `!important`, bo idą ze stylu inline.
     const invertCss = invert
       ? `html{filter:invert(0.92) hue-rotate(180deg);background:#ffffff}
-         img,video,svg{filter:invert(1.087) hue-rotate(180deg)}
+         img,video,svg,.lm-emoji{filter:invert(1.087) hue-rotate(180deg)}
          [style*="background-image"]{background-image:none !important}`
       : "";
+    const content = invert ? wrapEmoji(inner) : inner;
     return `<!doctype html><html><head><meta charset="utf-8"><style>
       ${invertCss}
       body{font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;font-size:15px;
@@ -457,7 +493,7 @@
       .lm-dots{letter-spacing:1px}
       .lm-quoted-body{margin-top:14px;padding-left:14px;
         border-left:3px solid ${c.quote};color:${c.quoteFg}}
-    </style></head><body>${inner}</body></html>`;
+    </style></head><body>${content}</body></html>`;
   }
 </script>
 
@@ -569,6 +605,10 @@
                       <span class="block truncate text-[12.5px] text-muted">{m.preview}</span>
                     {:else}
                       <span class="block truncate text-[12px] text-muted">{m.fromAddr}</span>
+                      <span class="block truncate text-[12px] text-muted" title={recipientsOf(m.id)}>
+                        <span class="font-medium">Do:</span>
+                        {recipientsOf(m.id)}
+                      </span>
                     {/if}
                   </span>
                   {#if m.isFlagged}<Icon name="flag" size={12} class="shrink-0 text-flag" />{/if}
@@ -621,8 +661,10 @@
                   </span>
                   <div class="min-w-0 flex-1">
                     <p class="truncate text-sm font-semibold">{m.fromName || m.fromAddr}</p>
-                    <p class="truncate text-[12.5px] text-muted">
-                      {m.fromAddr} · do: {bodies[m.id]?.toAddrs || "…"}
+                    <p class="truncate text-[12.5px] text-muted">{m.fromAddr}</p>
+                    <p class="line-clamp-2 text-[12.5px] text-muted" title={recipientsOf(m.id)}>
+                      <span class="font-medium">Do:</span>
+                      {recipientsOf(m.id)}
                     </p>
                   </div>
                   <span class="shrink-0 text-[12.5px] text-muted">{fmtDateFull(m.date)}</span>

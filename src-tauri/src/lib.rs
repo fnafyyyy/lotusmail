@@ -7,7 +7,7 @@ mod commands;
 mod db;
 mod detect;
 mod error;
-mod mail;
+pub mod mail;
 mod models;
 mod notify;
 pub mod oauth;

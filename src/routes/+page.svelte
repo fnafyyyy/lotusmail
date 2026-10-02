@@ -964,10 +964,20 @@
     );
   }
 
-  function replyFor(slot: 1 | 2, all: boolean) {
+  // Wiadomość z folderu szkiców na serwerze (np. odpowiedź zaczęta w webmailu).
+  // Trafia do konwersacji po nagłówkach jak każda inna, ale nikt jej nie wysłał.
+  function isServerDraft(m: MessageSummary): boolean {
+    return folders.find((f) => f.id === m.folderId)?.kind === "drafts";
+  }
+
+  async function replyFor(slot: 1 | 2, all: boolean) {
     const m = paneMsg(slot);
     if (!m) return;
-    const b = slot === 1 ? body : body2;
+    let b = slot === 1 ? body : body2;
+    // Odbiorców do „Odpowiedz wszystkim" czytamy z bazy na świeżo: DW starszej
+    // poczty dociąga się w tle, więc treść wczytana przy otwarciu wiadomości
+    // może go jeszcze nie mieć.
+    if (all) b = await api.getMessageBody(m.id).catch(() => b);
     const toAddrs = m.fromAddr;
     // „Odpowiedz wszystkim": nadawca zostaje w polu Do, pozostali adresaci
     // schodzą do DW - tak robią Outlook i Spark, więc odbiorcy widzą, kto
@@ -976,7 +986,7 @@
     if (all) {
       const folder = folders.find((f) => f.id === m.folderId);
       const own = accounts.find((a) => a.id === folder?.accountId)?.email.toLowerCase();
-      const others = (b?.toAddrs ?? "")
+      const others = `${b?.toAddrs ?? ""},${b?.ccAddrs ?? ""}`
         .split(",")
         .map((a) => a.trim())
         .filter(
@@ -1837,6 +1847,7 @@
       {body}
       thread={thread1}
       accountLabel={accountLabelOf(selected)}
+      isDraft={isServerDraft}
       onreply={() => replyFor(1, false)}
       onreplyall={() => replyFor(1, true)}
       onforward={() => forwardFor(1)}
@@ -1870,6 +1881,7 @@
           body={body2}
           thread={thread2}
           accountLabel={accountLabelOf(selected2)}
+          isDraft={isServerDraft}
           onreply={() => replyFor(2, false)}
           onreplyall={() => replyFor(2, true)}
           onforward={() => forwardFor(2)}

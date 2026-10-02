@@ -374,6 +374,12 @@ pub async fn sync_account_mode(
             continue;
         }
 
+        // Poczta pobrana, zanim baza zaczęła trzymać DW - dociągamy po cichu.
+        let batch = if mode == SyncMode::Full { CC_BACKFILL_FULL } else { CC_BACKFILL_QUICK };
+        if let Err(e) = backfill_cc(app, &mut session, folder_id, batch).await {
+            eprintln!("[sync] uzupełnianie DW folderu {folder_id}: {e}");
+        }
+
         // Czego brakuje lokalnie. Drogie porównanie pełnej listy UID-ów robimy
         // tylko wtedy, gdy jest po co: w trybie szybkim nigdy, a w pełnym -
         // dopóki folder nie jest kompletny albo dopóki liczba wiadomości na
@@ -524,8 +530,8 @@ pub async fn sync_account_mode(
                     "INSERT OR IGNORE INTO messages
                        (folder_id, uid, message_id, in_reply_to, thread_id, subject_key, subject,
                         from_name, from_addr, to_addrs, date, preview, is_read, is_flagged,
-                        has_attachments, category)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                        has_attachments, category, cc_addrs)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
                     rusqlite::params![
                         folder_id,
                         msg.uid,
@@ -543,6 +549,7 @@ pub async fn sync_account_mode(
                         msg.flagged as i64,
                         parsed.has_attachments as i64,
                         parsed.category,
+                        parsed.cc_addrs,
                     ],
                 )?;
                 if inserted > 0 {
@@ -693,8 +700,8 @@ fn store_message(
         "INSERT OR IGNORE INTO messages
            (folder_id, uid, message_id, in_reply_to, thread_id, subject_key, subject,
             from_name, from_addr, to_addrs, date, preview, is_read, is_flagged,
-            has_attachments, category)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            has_attachments, category, cc_addrs)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
         rusqlite::params![
             folder_id,
             msg.uid,
@@ -712,6 +719,7 @@ fn store_message(
             msg.flagged as i64,
             parsed.has_attachments as i64,
             parsed.category,
+            parsed.cc_addrs,
         ],
     )?;
     if inserted > 0 {
@@ -928,6 +936,58 @@ async fn apply_rules(
         let _ = app.emit("messages-updated", ());
     }
     Ok(moved)
+}
+
+/// Ile wiadomości bez DW uzupełniamy w jednym folderze na przebieg. Tryb szybki
+/// chodzi co 30 s i ma krótki limit czasu, więc bierze małe porcje.
+const CC_BACKFILL_QUICK: usize = 200;
+const CC_BACKFILL_FULL: usize = 2000;
+
+/// Uzupełnia odbiorców DW w wiadomościach pobranych przed migracją 18
+/// (`cc_addrs IS NULL`), od najnowszych. Pobiera same nagłówki, bez treści.
+/// Wiadomość, której serwer już nie ma, dostaje pusty łańcuch - inaczej
+/// pytalibyśmy o nią przy każdym przebiegu.
+async fn backfill_cc(
+    app: &AppHandle,
+    session: &mut ImapSession,
+    folder_id: i64,
+    batch: usize,
+) -> Result<()> {
+    let uids: Vec<u32> = {
+        let db = app.state::<Db>();
+        let conn = db.0.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT uid FROM messages
+             WHERE folder_id = ?1 AND uid > 0 AND cc_addrs IS NULL
+             ORDER BY uid DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![folder_id, batch as i64], |r| r.get(0))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    if uids.is_empty() {
+        return Ok(());
+    }
+    let mut found: std::collections::HashMap<u32, String> = std::collections::HashMap::new();
+    for chunk in uids.chunks(100) {
+        let set = chunk.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+        let stream = session.uid_fetch(set, "(UID BODY.PEEK[HEADER])").await?;
+        let items = stream.try_collect::<Vec<_>>().await?;
+        for f in &items {
+            if let (Some(uid), Some(header)) = (f.uid, f.header()) {
+                found.insert(uid, mail::parse_cc(header));
+            }
+        }
+    }
+    let db = app.state::<Db>();
+    let conn = db.0.lock().unwrap();
+    for uid in uids {
+        conn.execute(
+            "UPDATE messages SET cc_addrs = ?3
+             WHERE folder_id = ?1 AND uid = ?2 AND cc_addrs IS NULL",
+            rusqlite::params![folder_id, uid, found.get(&uid).map(String::as_str).unwrap_or("")],
+        )?;
+    }
+    Ok(())
 }
 
 /// Pobiera z serwera aktualne flagi wiadomości i wyrównuje lokalny stan.

@@ -12,6 +12,7 @@
     body,
     thread = [],
     accountLabel = "",
+    isDraft = () => false,
     onreply,
     onreplyall,
     onforward,
@@ -26,6 +27,10 @@
     /** Cała konwersacja (od najstarszej). Pusta = pojedyncza wiadomość. */
     thread?: MessageSummary[];
     accountLabel?: string;
+    /** Czy wiadomość leży w folderze szkiców na serwerze (np. niewysłana
+     *  odpowiedź zapisana przez webmail) - w konwersacji wyróżniamy ją,
+     *  żeby nie wyglądała na wysłany mail. */
+    isDraft?: (m: MessageSummary) => boolean;
     onreply: () => void;
     onreplyall: () => void;
     onforward: () => void;
@@ -59,6 +64,10 @@
     const b = bodies[id];
     if (!b) return "…";
     return b.toAddrs.trim() || "(ukryci odbiorcy)";
+  }
+
+  function ccOf(id: number): string {
+    return bodies[id]?.ccAddrs.trim() ?? "";
   }
 
   async function toggle(m: MessageSummary) {
@@ -584,22 +593,38 @@
         <div class="min-h-0 flex-1 overflow-y-auto {isThread ? 'px-4 pb-4' : 'flex flex-col'}">
           {#each items as m (m.id)}
             {@const open = expanded.has(m.id)}
+            {@const draft = isDraft(m)}
             {#if isThread}
               <!-- Konwersacja: każda wiadomość jako składana karta -->
-              <div class="mb-2 overflow-hidden rounded-xl bg-rail/60 ring-1 ring-line">
+              <div
+                class="mb-2 overflow-hidden rounded-xl ring-1
+                       {draft ? 'bg-flag/8 ring-flag/45' : 'bg-rail/60 ring-line'}"
+              >
                 <button
-                  class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-rail"
+                  class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors
+                         {draft ? 'hover:bg-flag/12' : 'hover:bg-rail'}"
                   onclick={() => toggle(m)}
                 >
                   <span
-                    class="grid size-8 shrink-0 place-items-center rounded-[10px] bg-accent text-[11px]
-                           font-bold text-on-accent"
+                    class="grid size-8 shrink-0 place-items-center rounded-[10px] text-[11px] font-bold
+                           {draft ? 'bg-flag/20 text-flag' : 'bg-accent text-on-accent'}"
                   >
                     {initials(m.fromName, m.fromAddr)}
                   </span>
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[13.5px] font-semibold">
-                      {m.fromName || m.fromAddr}
+                    <span class="flex items-center gap-2">
+                      <span class="truncate text-[13.5px] font-semibold">
+                        {m.fromName || m.fromAddr}
+                      </span>
+                      {#if draft}
+                        <span
+                          class="shrink-0 rounded-md bg-flag/15 px-1.5 py-0.5 text-[10.5px] font-semibold
+                                 tracking-wide text-flag uppercase"
+                          title="Ta wiadomość leży w folderze szkiców - nie została wysłana"
+                        >
+                          Kopia robocza
+                        </span>
+                      {/if}
                     </span>
                     {#if !open}
                       <span class="block truncate text-[12.5px] text-muted">{m.preview}</span>
@@ -609,6 +634,12 @@
                         <span class="font-medium">Do:</span>
                         {recipientsOf(m.id)}
                       </span>
+                      {#if ccOf(m.id)}
+                        <span class="block truncate text-[12px] text-muted" title={ccOf(m.id)}>
+                          <span class="font-medium">DW:</span>
+                          {ccOf(m.id)}
+                        </span>
+                      {/if}
                     {/if}
                   </span>
                   {#if m.isFlagged}<Icon name="flag" size={12} class="shrink-0 text-flag" />{/if}
@@ -666,6 +697,12 @@
                       <span class="font-medium">Do:</span>
                       {recipientsOf(m.id)}
                     </p>
+                    {#if ccOf(m.id)}
+                      <p class="line-clamp-2 text-[12.5px] text-muted" title={ccOf(m.id)}>
+                        <span class="font-medium">DW:</span>
+                        {ccOf(m.id)}
+                      </p>
+                    {/if}
                   </div>
                   <span class="shrink-0 text-[12.5px] text-muted">{fmtDateFull(m.date)}</span>
                 </div>

@@ -243,6 +243,7 @@ pub struct ParsedEmail {
     pub from_name: String,
     pub from_addr: String,
     pub to_addrs: String,
+    pub cc_addrs: String,
     pub date: i64,
     pub html: Option<String>,
     pub text: Option<String>,
@@ -260,6 +261,27 @@ fn header_ids(value: &mail_parser::HeaderValue) -> Vec<String> {
     }
 }
 
+/// Adresy z nagłówka To/Cc sklejone przecinkami - w tej postaci leżą w bazie.
+fn join_addresses(value: Option<&mail_parser::Address>) -> String {
+    value
+        .map(|a| {
+            a.iter()
+                .filter_map(|addr| addr.address())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default()
+}
+
+/// Odbiorcy DW z samych nagłówków wiadomości - do uzupełniania poczty pobranej,
+/// zanim DW trafiło do bazy.
+pub fn parse_cc(raw_header: &[u8]) -> String {
+    mail_parser::MessageParser::default()
+        .parse(raw_header)
+        .map(|msg| join_addresses(msg.cc()))
+        .unwrap_or_default()
+}
+
 /// Parsuje surowe bajty wiadomości (MIME) do postaci gotowej do zapisu w bazie.
 pub fn parse_email(raw: &[u8]) -> Option<ParsedEmail> {
     let msg = mail_parser::MessageParser::default().parse(raw)?;
@@ -275,15 +297,8 @@ pub fn parse_email(raw: &[u8]) -> Option<ParsedEmail> {
         })
         .unwrap_or_default();
 
-    let to_addrs = msg
-        .to()
-        .map(|a| {
-            a.iter()
-                .filter_map(|addr| addr.address())
-                .collect::<Vec<_>>()
-                .join(", ")
-        })
-        .unwrap_or_default();
+    let to_addrs = join_addresses(msg.to());
+    let cc_addrs = join_addresses(msg.cc());
 
     // HTML trafia do bazy surowy - sanityzacja dzieje się przy wyświetlaniu
     // (get_message_body), więc zmiany polityki nie wymagają ponownego pobrania.
@@ -329,6 +344,7 @@ pub fn parse_email(raw: &[u8]) -> Option<ParsedEmail> {
         from_name,
         from_addr,
         to_addrs,
+        cc_addrs,
         date: msg.date().map(|d| d.to_timestamp()).unwrap_or(0),
         has_attachments: msg.attachment_count() > 0,
         category: categorize(&from_addr_for_cat, signals),

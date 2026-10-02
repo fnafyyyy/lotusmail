@@ -228,6 +228,14 @@ fn migrate(conn: &Connection) -> Result<()> {
         )?;
         conn.pragma_update(None, "user_version", 17)?;
     }
+    if version < 18 {
+        // Odbiorcy z pola DW - potrzebni w nagłówku wiadomości i przy
+        // „Odpowiedz wszystkim". NULL znaczy „jeszcze nie wiemy": poczta
+        // pobrana przed tą migracją dostaje DW w tle (`backfill_cc` w sync.rs),
+        // pusty łańcuch to wiadomość bez DW.
+        conn.execute_batch("ALTER TABLE messages ADD COLUMN cc_addrs TEXT")?;
+        conn.pragma_update(None, "user_version", 18)?;
+    }
     Ok(())
 }
 

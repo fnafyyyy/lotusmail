@@ -85,6 +85,8 @@ pub struct MessageSummary {
 pub struct MessageBody {
     pub id: i64,
     pub to_addrs: String,
+    /// Odbiorcy DW; pusty także wtedy, gdy jeszcze ich nie dociągnięto.
+    pub cc_addrs: String,
     pub html: Option<String>,
     pub text: Option<String>,
     /// Nagłówki potrzebne przy odpowiadaniu, żeby wątek się skleił.

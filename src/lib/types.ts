@@ -53,6 +53,8 @@ export interface MessageSummary {
 export interface MessageBody {
   id: number;
   toAddrs: string;
+  /** Odbiorcy DW; pusty także wtedy, gdy jeszcze ich nie dociągnięto. */
+  ccAddrs: string;
   html: string | null;
   text: string | null;
   /** Nagłówki potrzebne przy odpowiadaniu, żeby wątek się skleił. */

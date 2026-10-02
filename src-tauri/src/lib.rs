@@ -7,6 +7,7 @@ mod commands;
 mod db;
 mod detect;
 mod error;
+mod instance;
 pub mod mail;
 mod models;
 mod notify;
@@ -45,6 +46,11 @@ fn disable_webview_context_menu(_app: &mut tauri::App) {}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Drugie uruchomienie tylko pokazuje okno pierwszego.
+    if instance::focus_existing() {
+        return;
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -128,6 +134,11 @@ pub fn run() {
             spell::spell_suggest,
             spell::spell_add,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                instance::hard_exit();
+            }
+        });
 }

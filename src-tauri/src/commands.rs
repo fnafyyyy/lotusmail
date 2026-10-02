@@ -368,7 +368,8 @@ pub async fn get_message_body(db: State<'_, Db>, id: i64) -> Result<MessageBody>
     let mut body = {
         let conn = db.0.lock().unwrap();
         conn.query_row(
-            "SELECT m.id, m.to_addrs, b.html, b.text, m.message_id, m.in_reply_to
+            "SELECT m.id, m.to_addrs, b.html, b.text, m.message_id, m.in_reply_to,
+                    COALESCE(m.cc_addrs, '')
              FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id
              WHERE m.id = ?1",
             [id],
@@ -376,6 +377,7 @@ pub async fn get_message_body(db: State<'_, Db>, id: i64) -> Result<MessageBody>
                 Ok(MessageBody {
                     id: r.get(0)?,
                     to_addrs: r.get(1)?,
+                    cc_addrs: r.get(6)?,
                     html: r.get(2)?,
                     text: r.get(3)?,
                     message_id: r.get(4)?,

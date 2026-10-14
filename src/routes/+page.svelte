@@ -10,6 +10,7 @@
     Account,
     Category,
     CategoryCounts,
+    FailedSend,
     Folder,
     SortKey,
     LocalDraft,
@@ -111,6 +112,10 @@
     ),
   );
   let toast = $state("");
+  // Nieudane wysyłki. Kolejka ich nie ponawia, więc wiszą na pasku, dopóki
+  // użytkownik nie ponowi albo nie odrzuci - także po restarcie programu.
+  let failedSends = $state<FailedSend[]>([]);
+  let retrying = $state(new Set<number>());
   let loaded = $state(false);
   let toastTimer: ReturnType<typeof setTimeout>;
   let syncStatus = $state("");
@@ -239,6 +244,46 @@
     toastTimer = setTimeout(() => (toast = ""), 3500);
   }
 
+  async function reloadFailedSends() {
+    try {
+      failedSends = await api.listFailedSends();
+    } catch (e) {
+      console.error("[failed-sends]", e);
+    }
+  }
+
+  async function retrySend(id: number) {
+    retrying = new Set(retrying).add(id);
+    try {
+      await api.retrySend(id);
+      failedSends = failedSends.filter((f) => f.id !== id);
+    } catch (e) {
+      showToast(`Nie udało się ponowić wysyłki: ${e}`);
+    } finally {
+      const next = new Set(retrying);
+      next.delete(id);
+      retrying = next;
+    }
+  }
+
+  async function discardSend(f: FailedSend) {
+    dialog = {
+      title: "Odrzucić wiadomość?",
+      message: `„${f.subject || "(bez tematu)"}” nie zostanie wysłana i zniknie z kolejki.`,
+      confirmLabel: "Odrzuć",
+      danger: true,
+      onconfirm: async () => {
+        dialog = null;
+        try {
+          await api.discardSend(f.id);
+          failedSends = failedSends.filter((x) => x.id !== f.id);
+        } catch (e) {
+          showToast(`Nie udało się odrzucić: ${e}`);
+        }
+      },
+    };
+  }
+
   async function loadMessages() {
     hasMore = false;
     if (searchQuery.trim()) {
@@ -333,6 +378,7 @@
     const splashTimer = setTimeout(() => (minSplashDone = true), 2600);
     refresh().then(() => (loaded = true));
     void reloadDrafts();
+    void reloadFailedSends();
     api.getSetting("signature").then((s) => (signature = s ?? ""));
     const unlisten = listen("messages-updated", () => refreshSoon());
     const unlistenErr = listen<string>("sync-error", (e) =>
@@ -354,6 +400,7 @@
     const unlistenSent = listen<string>("outbox-sent", (e) =>
       showToast(`Wysłano: ${e.payload || "(bez tematu)"}`),
     );
+    const unlistenFailed = listen<number>("outbox-failed", () => reloadFailedSends());
     // Aktualizacje sprawdzamy z opóźnieniem: start programu i pierwsza
     // synchronizacja są ważniejsze niż pytanie o nową wersję.
     const updateTimer = setTimeout(async () => {
@@ -388,6 +435,7 @@
       unlisten.then((fn) => fn());
       unlistenErr.then((fn) => fn());
       unlistenSent.then((fn) => fn());
+      unlistenFailed.then((fn) => fn());
       unlistenOpen.then((fn) => fn());
       unlistenStatus.then((fn) => fn());
     };
@@ -2069,6 +2117,42 @@
       showToast("Zapisano ustawienia");
     }}
   />
+{/if}
+
+{#if failedSends.length}
+  <div class="fixed right-5 bottom-5 z-40 flex w-[380px] max-w-[calc(100vw-2rem)] flex-col gap-2">
+    {#each failedSends as f (f.id)}
+      <div
+        class="rounded-lg border border-danger/40 bg-surface p-3 text-[13px] shadow-lg"
+        transition:fly={{ y: 16, duration: 220 }}
+      >
+        <div class="flex items-start gap-2">
+          <span class="mt-0.5 text-danger"><Icon name="send" size={14} /></span>
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-ink">Nie wysłano: {f.subject || "(bez tematu)"}</div>
+            <div class="truncate text-muted">do {f.toAddrs.replace(/,\s*$/, "")}</div>
+            <div class="mt-1 line-clamp-2 text-[12px] text-muted" title={f.error}>{f.error}</div>
+          </div>
+        </div>
+        <div class="mt-2 flex justify-end gap-2">
+          <button
+            class="rounded px-2.5 py-1 text-muted hover:bg-line/60 hover:text-ink"
+            onclick={() => discardSend(f)}
+          >
+            Odrzuć
+          </button>
+          <button
+            class="flex items-center gap-1.5 rounded bg-accent px-2.5 py-1 font-medium text-on-accent hover:opacity-90 disabled:opacity-60"
+            disabled={retrying.has(f.id)}
+            onclick={() => retrySend(f.id)}
+          >
+            <Icon name="refresh" size={12} />
+            Ponów
+          </button>
+        </div>
+      </div>
+    {/each}
+  </div>
 {/if}
 
 {#if toast}

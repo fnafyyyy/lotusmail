@@ -11,6 +11,7 @@ import type {
   Contact,
   DetectedConfig,
   DraftAttachment,
+  FailedSend,
   Folder,
   MessageBody,
   MessageSummary,
@@ -69,6 +70,10 @@ export const api = {
     invoke<MessageSummary[]>("search_messages", { query }),
   searchServer: (query: string) => invoke<number>("search_server", { query }),
   queueSend: (draft: ComposeDraft) => invoke<number>("queue_send", { draft }),
+  /** Wysyłki zakończone błędem - kolejka sama ich nie ponawia. */
+  listFailedSends: () => invoke<FailedSend[]>("list_failed_sends"),
+  retrySend: (id: number) => invoke<void>("retry_send", { id }),
+  discardSend: (id: number) => invoke<void>("discard_send", { id }),
   /** Zapisuje kopię roboczą (bez `id` zakłada nową) i oddaje jej identyfikator. */
   saveDraft: (draft: {
     id: number | null;

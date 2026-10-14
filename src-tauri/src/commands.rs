@@ -747,6 +747,55 @@ pub async fn queue_send(app: AppHandle, db: State<'_, Db>, draft: ComposeDraft) 
     Ok(id)
 }
 
+/// Wiadomości, których wysyłka się nie powiodła. Status `failed` jest w
+/// kolejce ostateczny - harmonogram sam ich nie ponawia, więc bez tej listy
+/// znikałyby razem z toastem.
+#[tauri::command]
+pub async fn list_failed_sends(db: State<'_, Db>) -> Result<Vec<FailedSend>> {
+    let conn = db.0.lock().unwrap();
+    let mut stmt = conn.prepare(
+        "SELECT id, account_id, to_addrs, subject, COALESCE(error, ''), created_at
+         FROM outbox WHERE status = 'failed' ORDER BY created_at",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(FailedSend {
+            id: r.get(0)?,
+            account_id: r.get(1)?,
+            to_addrs: r.get(2)?,
+            subject: r.get(3)?,
+            error: r.get(4)?,
+            created_at: r.get(5)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Wstawia nieudaną wysyłkę z powrotem do kolejki i od razu ją przetwarza.
+/// `send_at` się zeruje - „wyślij później" już minęło, a ponowienie ma pójść teraz.
+#[tauri::command]
+pub async fn retry_send(app: AppHandle, db: State<'_, Db>, id: i64) -> Result<()> {
+    {
+        let conn = db.0.lock().unwrap();
+        conn.execute(
+            "UPDATE outbox SET status = 'queued', error = NULL, send_at = NULL
+             WHERE id = ?1 AND status = 'failed'",
+            [id],
+        )?;
+    }
+    tauri::async_runtime::spawn(async move {
+        crate::send::process_outbox(&app).await;
+    });
+    Ok(())
+}
+
+/// Porzuca nieudaną wysyłkę (załączniki znikają kaskadą).
+#[tauri::command]
+pub async fn discard_send(db: State<'_, Db>, id: i64) -> Result<()> {
+    let conn = db.0.lock().unwrap();
+    conn.execute("DELETE FROM outbox WHERE id = ?1 AND status = 'failed'", [id])?;
+    Ok(())
+}
+
 /// Zapisuje kopię roboczą. Bez `id` zakłada nową, z `id` nadpisuje istniejącą.
 /// Wołane przy pisaniu (z opóźnieniem), więc musi być tanie: załączniki - a to
 /// jedyne, co waży - przepisujemy dopiero, gdy faktycznie się zmieniły.

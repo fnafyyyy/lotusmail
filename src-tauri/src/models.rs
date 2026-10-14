@@ -223,3 +223,16 @@ pub struct CleanupProgress {
     pub done: usize,
     pub total: usize,
 }
+
+/// Wiadomość z kolejki, której nie udało się wysłać - do ponowienia albo
+/// odrzucenia z paska „Nie wysłano".
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FailedSend {
+    pub id: i64,
+    pub account_id: i64,
+    pub to_addrs: String,
+    pub subject: String,
+    pub error: String,
+    pub created_at: i64,
+}

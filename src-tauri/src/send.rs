@@ -91,7 +91,7 @@ pub async fn process_outbox(app: &AppHandle) {
             Err(e) => {
                 eprintln!("[send] outbox {}: {e}", mail.id);
                 set_status(app, mail.id, "failed", Some(&e.to_string()));
-                let _ = app.emit("sync-error", format!("wysyłka „{}”: {e}", mail.subject));
+                let _ = app.emit("outbox-failed", mail.id);
             }
         }
         let _ = app.emit("sync-status", "");

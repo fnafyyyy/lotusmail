@@ -208,3 +208,13 @@ export interface SyncApplyResult {
   /** Urządzenie, które zapisało paczkę. */
   device: string;
 }
+
+/** Wiadomość, której nie udało się wysłać - do ponowienia albo odrzucenia. */
+export interface FailedSend {
+  id: number;
+  accountId: number;
+  toAddrs: string;
+  subject: string;
+  error: string;
+  createdAt: number;
+}

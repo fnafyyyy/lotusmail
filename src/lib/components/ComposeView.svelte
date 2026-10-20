@@ -134,7 +134,15 @@
   let spellSupported = $state(false);
   /** Przełącznik użytkownika (ikonka „abc" na pasku narzędzi). */
   let spellOn = $state(true);
-  let spellMenu = $state<{ x: number; y: number; hit: SpellHit; tips: string[] } | null>(null);
+  /** Menu pod prawym przyciskiem: podpowiedzi pisowni (gdy kliknięto błąd)
+   *  i czyszczenie formatowania (gdy jest co czyścić). */
+  let spellMenu = $state<{
+    x: number;
+    y: number;
+    hit: SpellHit | null;
+    tips: string[];
+    format: Range | null;
+  } | null>(null);
 
   $effect(() => {
     if (!editor || spell) return;
@@ -156,18 +164,66 @@
     if (spellOn) spell?.schedule();
   }
 
+  // Zaznaczenie sprzed prawego kliknięcia - samo kliknięcie potrafi je zwinąć
+  // albo przestawić na słowo pod kursorem.
+  let selectionAtClick: Range | null = null;
+
+  function onBodyMouseDown(e: MouseEvent) {
+    if (e.button !== 2) return;
+    const sel = window.getSelection();
+    const r = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+    selectionAtClick =
+      r && !r.collapsed && editor.contains(r.commonAncestorContainer) ? r.cloneRange() : null;
+  }
+
+  /// Zakres do wyczyszczenia: zaznaczenie, a bez niego cały sformatowany
+  /// fragment pod kursorem (najwyższy element w linii, np. `<span>` z tłem
+  /// i kolorem przywleczony przy wklejaniu z Teams czy Outlooka).
+  function formatRangeAt(x: number, y: number): Range | null {
+    if (selectionAtClick) return selectionAtClick;
+    const caret = document.caretRangeFromPoint?.(x, y);
+    let node: Node | null = caret?.startContainer ?? null;
+    if (!node || !editor.contains(node)) return null;
+    let top: Element | null = null;
+    for (let el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+      el && el !== editor && getComputedStyle(el).display.startsWith("inline");
+      el = el.parentElement) {
+      top = el;
+    }
+    if (!top) return null;
+    const range = document.createRange();
+    range.selectNodeContents(top);
+    return range;
+  }
+
   async function onBodyContextMenu(e: MouseEvent) {
     e.preventDefault();
     spellMenu = null;
-    if (!spellOn || !spell) return;
-    const hit = spell.hitAt(e.clientX, e.clientY);
-    if (!hit) return;
-    const tips = await api.spellSuggest(hit.word);
-    spellMenu = { x: e.clientX, y: e.clientY, hit, tips };
+    const format = formatRangeAt(e.clientX, e.clientY);
+    const hit = spellOn && spell ? spell.hitAt(e.clientX, e.clientY) : null;
+    if (!hit && !format) return;
+    const tips = hit ? await api.spellSuggest(hit.word) : [];
+    spellMenu = { x: e.clientX, y: e.clientY, hit, tips, format };
+  }
+
+  function clearFormatting() {
+    const range = spellMenu?.format;
+    spellMenu = null;
+    if (!range) return;
+    editor.focus();
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // execCommand, nie ręczne zdejmowanie atrybutów - zmiana trafia wtedy
+    // do historii i Ctrl+Z ją cofa.
+    document.execCommand("removeFormat");
+    sel?.collapseToEnd();
+    draft.bodyHtml = editor.innerHTML;
+    if (spellOn) spell?.schedule(150);
   }
 
   function useSuggestion(word: string) {
-    if (!spellMenu || !spell) return;
+    if (!spellMenu?.hit || !spell) return;
     spell.replace(spellMenu.hit, word);
     draft.bodyHtml = editor.innerHTML;
     spellMenu = null;
@@ -175,7 +231,7 @@
   }
 
   async function addToDictionary() {
-    if (!spellMenu || !spell) return;
+    if (!spellMenu?.hit || !spell) return;
     const word = spellMenu.hit.word;
     spellMenu = null;
     try {
@@ -453,6 +509,7 @@
         tabindex="0"
         spellcheck="false"
         oninput={onBodyInput}
+        onmousedown={onBodyMouseDown}
         oncontextmenu={onBodyContextMenu}
         ondragover={(e) => {
           if (!e.dataTransfer?.types.includes("Files")) return;
@@ -510,39 +567,54 @@
           style="left:{spellMenu.x}px; top:{spellMenu.y}px"
           transition:fade={{ duration: 90 }}
         >
-          {#if spellMenu.tips.length > 0}
-            {#each spellMenu.tips.slice(0, 6) as tip (tip)}
-              <button
-                class="flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px]
-                       font-semibold hover:bg-rail"
-                onclick={() => useSuggestion(tip)}
-              >
-                {tip}
-              </button>
-            {/each}
-            <div class="my-1 h-px bg-line"></div>
-          {:else}
-            <p class="px-2.5 py-1.5 text-[12.5px] text-muted">Brak podpowiedzi</p>
+          {#if spellMenu.hit}
+            {#if spellMenu.tips.length > 0}
+              {#each spellMenu.tips.slice(0, 6) as tip (tip)}
+                <button
+                  class="flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[13px]
+                         font-semibold hover:bg-rail"
+                  onclick={() => useSuggestion(tip)}
+                >
+                  {tip}
+                </button>
+              {/each}
+              <div class="my-1 h-px bg-line"></div>
+            {:else}
+              <p class="px-2.5 py-1.5 text-[12.5px] text-muted">Brak podpowiedzi</p>
+            {/if}
+            <button
+              class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
+                     text-ink-soft hover:bg-rail"
+              onclick={addToDictionary}
+            >
+              <Icon name="plus" size={12} />
+              Dodaj do słownika
+            </button>
+            <button
+              class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
+                     text-ink-soft hover:bg-rail"
+              onclick={() => {
+                if (spellMenu?.hit) spell?.ignore(spellMenu.hit.word);
+                spellMenu = null;
+              }}
+            >
+              <Icon name="x" size={12} />
+              Pomiń w tej wiadomości
+            </button>
           {/if}
-          <button
-            class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
-                   text-ink-soft hover:bg-rail"
-            onclick={addToDictionary}
-          >
-            <Icon name="plus" size={12} />
-            Dodaj do słownika
-          </button>
-          <button
-            class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
-                   text-ink-soft hover:bg-rail"
-            onclick={() => {
-              if (spellMenu) spell?.ignore(spellMenu.hit.word);
-              spellMenu = null;
-            }}
-          >
-            <Icon name="eraser" size={12} />
-            Pomiń w tej wiadomości
-          </button>
+          {#if spellMenu.format}
+            {#if spellMenu.hit}
+              <div class="my-1 h-px bg-line"></div>
+            {/if}
+            <button
+              class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
+                     text-ink-soft hover:bg-rail"
+              onclick={clearFormatting}
+            >
+              <Icon name="eraser" size={12} />
+              Wyczyść formatowanie
+            </button>
+          {/if}
         </div>
       {/if}
 

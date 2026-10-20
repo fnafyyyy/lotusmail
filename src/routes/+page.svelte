@@ -30,6 +30,8 @@
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import RuleModal from "$lib/components/RuleModal.svelte";
   import CleanupModal from "$lib/components/CleanupModal.svelte";
+  import TemplatesModal from "$lib/components/TemplatesModal.svelte";
+  import { loadTemplates, saveTemplates, type MailTemplate } from "$lib/templates";
   import Dialog from "$lib/components/Dialog.svelte";
   import { checkForUpdate } from "$lib/update";
   import Splash from "$lib/components/Splash.svelte";
@@ -91,6 +93,10 @@
   let narrow = $state(false);
   let mobilePane = $state<"folders" | "list" | "message">("list");
   let settingsOpen = $state(false);
+  let templates = $state<MailTemplate[]>([]);
+  let templatesMenu = $state(false);
+  /** Kreator wzorów: null = zamknięty, "new" = od razu z pustym wzorem. */
+  let templatesEditor = $state<"list" | "new" | null>(null);
   let signature = $state("");
   // Stopka per konto; klucz ustawienia to `signature:<id>`. Konto bez własnej
   // dostaje domyślną - dzięki temu nic nie znika użytkownikom, którzy mieli
@@ -351,6 +357,7 @@
       accounts.map(async (a) => [a.id, (await api.getSetting(`signature:${a.id}`)) ?? ""] as const),
     );
     signatures = Object.fromEntries(perAccount.filter(([, v]) => v.trim().length > 0));
+    templates = await loadTemplates();
   }
 
   // Synchronizacja zgłasza zmiany po każdym folderze - bez tego przy dużej
@@ -1219,8 +1226,6 @@
   /// Kopia robocza jako wiersz listy. Ujemne `id` odróżnia ją od maila -
   /// kliknięcie otwiera edytor, nie panel czytania.
   function draftSummary(d: StoredDraft): MessageSummary {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = d.bodyHtml;
     return {
       id: -d.id,
       folderId: 0,
@@ -1228,7 +1233,7 @@
       fromName: d.toAddrs.trim() || "(bez adresata)",
       fromAddr: d.toAddrs.trim(),
       date: d.updatedAt,
-      preview: tmp.innerText.replace(/\s+/g, " ").trim().slice(0, 200),
+      preview: htmlToText(d.bodyHtml).replace(/\s+/g, " ").slice(0, 200),
       isRead: true,
       isFlagged: false,
       hasAttachments: d.attachments.length > 0,
@@ -1340,6 +1345,27 @@
       references: null,
       subject: "",
       bodyHtml: signatureHtml(accountId),
+      attachments: [],
+    };
+    markPristine(draft);
+    placeSideDraft(draft);
+  }
+
+  /// Nowy szkic z wzoru: temat, adresat i treść gotowe, stopka doklejona pod
+  /// treścią jak przy zwykłym „Napisz".
+  function composeFromTemplate(t: MailTemplate) {
+    templatesMenu = false;
+    const accountId = composeAccountId();
+    const draft: LocalDraft = {
+      localId: draftSeq++,
+      accountId,
+      toAddrs: t.toAddrs,
+      ccAddrs: "",
+      bccAddrs: "",
+      inReplyTo: null,
+      references: null,
+      subject: t.subject,
+      bodyHtml: t.bodyHtml + signatureHtml(accountId),
       attachments: [],
     };
     markPristine(draft);
@@ -1525,9 +1551,39 @@
     };
   }
 
+  /// Tekstowa wersja HTML-a z edytora. Nie `innerText`: na elemencie spoza
+  /// dokumentu działa jak `textContent` i gubi podziały wierszy, więc część
+  /// text/plain wysyłanego maila (a z niej podgląd na liście) wychodziła jednym
+  /// ciągiem - „Cześć!Twoje nowe hasło…".
+  function htmlToText(html: string): string {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const block = /^(P|DIV|LI|TR|H[1-6]|BLOCKQUOTE|PRE|TABLE|UL|OL|HR)$/;
+    let out = "";
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += (node.textContent ?? "").replace(/\s+/g, " ");
+        return;
+      }
+      if (!(node instanceof Element) || /^(STYLE|SCRIPT|HEAD)$/.test(node.tagName)) return;
+      if (node.tagName === "BR") {
+        out += "\n";
+        return;
+      }
+      const isBlock = block.test(node.tagName);
+      if (isBlock && out && !out.endsWith("\n")) out += "\n";
+      node.childNodes.forEach(walk);
+      if (isBlock && out && !out.endsWith("\n")) out += "\n";
+    };
+    walk(doc.body);
+    return out
+      .split("\n")
+      .map((l) => l.trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
   async function sendDraft(draft: LocalDraft, sendAt: number | null) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = draft.bodyHtml;
     try {
       await api.queueSend({
         accountId: draft.accountId,
@@ -1537,7 +1593,7 @@
         inReplyTo: draft.inReplyTo ?? null,
         references: draft.references ?? null,
         subject: draft.subject,
-        bodyText: tmp.innerText,
+        bodyText: htmlToText(draft.bodyHtml),
         bodyHtml: draft.bodyHtml || null,
         sendAt,
         attachments: $state.snapshot(draft.attachments),
@@ -1700,14 +1756,81 @@
       <div class="flex-1 self-stretch" data-tauri-drag-region></div>
     {/if}
 
-    <button
-      class="flex h-8.5 items-center gap-1.75 rounded-full bg-accent px-4 text-[13px]
-             font-semibold text-on-accent hover:opacity-90"
-      onclick={composeNew}
-    >
-      <Icon name="edit" size={14} />
-      {#if !narrow}Napisz{/if}
-    </button>
+    <div class="relative flex h-8.5 items-stretch rounded-full bg-accent text-on-accent">
+      <button
+        class="flex items-center gap-1.75 rounded-l-full pr-3 pl-4 text-[13px] font-semibold
+               hover:bg-white/10"
+        onclick={composeNew}
+      >
+        <Icon name="edit" size={14} />
+        {#if !narrow}Napisz{/if}
+      </button>
+      <button
+        class="flex items-center rounded-r-full border-l border-on-accent/25 pr-2.5 pl-1.5
+               hover:bg-white/10 {templatesMenu ? 'bg-white/10' : ''}"
+        onclick={() => (templatesMenu = !templatesMenu)}
+        aria-label="Napisz z wzoru"
+        aria-expanded={templatesMenu}
+        title="Napisz z wzoru"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"
+          class="transition-transform {templatesMenu ? 'rotate-180' : ''}">
+          <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.6"
+            stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+
+      {#if templatesMenu}
+        <div
+          class="fixed inset-0 z-30"
+          role="presentation"
+          onclick={() => (templatesMenu = false)}
+          onkeydown={(e) => e.key === "Escape" && (templatesMenu = false)}
+        ></div>
+        <div
+          class="panel absolute top-full right-0 z-40 mt-1.5 w-60 p-1 text-ink ring-1 ring-line"
+          transition:fade={{ duration: 90 }}
+        >
+          <p class="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold text-muted">Napisz z wzoru</p>
+          {#each templates as t (t.id)}
+            <button
+              class="flex w-full flex-col rounded-md px-2.5 py-1.5 text-left hover:bg-rail"
+              onclick={() => composeFromTemplate(t)}
+            >
+              <span class="truncate text-[13px] font-semibold">{t.name}</span>
+              {#if t.subject && t.subject !== t.name}
+                <span class="truncate text-[11px] text-muted">{t.subject}</span>
+              {/if}
+            </button>
+          {:else}
+            <p class="px-2.5 py-1.5 text-[12.5px] text-muted">Brak wzorów</p>
+          {/each}
+          <div class="my-1 h-px bg-line"></div>
+          <button
+            class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
+                   text-ink-soft hover:bg-rail"
+            onclick={() => {
+              templatesMenu = false;
+              templatesEditor = "new";
+            }}
+          >
+            <Icon name="plus" size={12} />
+            Nowy wzór…
+          </button>
+          <button
+            class="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px]
+                   text-ink-soft hover:bg-rail"
+            onclick={() => {
+              templatesMenu = false;
+              templatesEditor = "list";
+            }}
+          >
+            <Icon name="settings" size={12} />
+            Zarządzaj wzorami…
+          </button>
+        </div>
+      {/if}
+    </div>
     <button
       class="grid size-8.5 place-items-center rounded-full bg-surface text-ink-soft
              shadow-[var(--chip-shadow)]"
@@ -2099,6 +2222,25 @@
       ruleFor = null;
       showToast(`Reguła zapisana - przenoszę do folderu ${folderName}…`);
       await refresh();
+    }}
+  />
+{/if}
+
+{#if templatesEditor}
+  <TemplatesModal
+    {templates}
+    startNew={templatesEditor === "new"}
+    onclose={() => (templatesEditor = null)}
+    onsaved={async (list) => {
+      try {
+        await saveTemplates(list);
+      } catch (e) {
+        showToast(`Nie udało się zapisać wzorów: ${e}`);
+        return;
+      }
+      templates = list;
+      templatesEditor = null;
+      showToast("Zapisano wzory");
     }}
   />
 {/if}

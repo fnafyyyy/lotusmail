@@ -6,6 +6,7 @@
 /// treść, ale zostawia obrazki oraz atrybuty tabel, na których opiera się
 /// układ typowych maili HTML (newslettery, powiadomienia).
 pub fn sanitize_html(html: &str) -> String {
+    let html = join_surrogate_refs(html);
     ammonia::Builder::default()
         .add_generic_attributes(&[
             "style", "width", "height", "align", "valign", "bgcolor", "border",
@@ -19,8 +20,52 @@ pub fn sanitize_html(html: &str) -> String {
                 .into_iter()
                 .collect(),
         )
-        .clean(html)
+        .clean(&html)
         .to_string()
+}
+
+/// Skleja emoji zapisane przez Outlooka jako dwie encje połówek pary
+/// zastępczej UTF-16 (`&#55357;&#56898;` zamiast `&#128578;`). Parser HTML
+/// zamienia każdą połówkę osobno na U+FFFD, więc w treści zostawało „��".
+fn join_surrogate_refs(html: &str) -> std::borrow::Cow<'_, str> {
+    if !html.contains("&#") {
+        return html.into();
+    }
+    // Encja liczbowa na początku `s`: (wartość, długość w bajtach).
+    fn char_ref(s: &str) -> Option<(u32, usize)> {
+        let body = s.strip_prefix("&#")?;
+        let (radix, digits) = match body.strip_prefix(['x', 'X']) {
+            Some(hex) => (16, hex),
+            None => (10, body),
+        };
+        let len = digits.find(|c: char| !c.is_digit(radix))?;
+        if len == 0 || len > 8 || !digits[len..].starts_with(';') {
+            return None;
+        }
+        let value = u32::from_str_radix(&digits[..len], radix).ok()?;
+        Some((value, s.len() - digits.len() + len + 1))
+    }
+
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find("&#") {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        if let Some((hi @ 0xD800..=0xDBFF, l1)) = char_ref(rest) {
+            if let Some((lo @ 0xDC00..=0xDFFF, l2)) = char_ref(&rest[l1..]) {
+                let cp = 0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00);
+                if let Some(c) = char::from_u32(cp) {
+                    out.push(c);
+                    rest = &rest[l1 + l2..];
+                    continue;
+                }
+            }
+        }
+        out.push_str("&#");
+        rest = &rest[2..];
+    }
+    out.push_str(rest);
+    out.into()
 }
 
 #[cfg(test)]
@@ -32,6 +77,13 @@ mod testy_sanitizera {
         println!("WEJSCIE: {wejscie}");
         println!("WYNIK:   {wynik}");
         assert!(wynik.contains("Zgłaszam awarię"), "sanitizer zjadł treść: {wynik}");
+    }
+
+    #[test]
+    fn skleja_emoji_z_polowek_pary_zastepczej() {
+        let wynik = super::sanitize_html("<div>Dziękuję &#55357;&#56898; &#xD83D;&#xDC4D; &amp; &#169;</div>");
+        assert!(wynik.contains("Dziękuję 🙂 👍"), "{wynik}");
+        assert!(wynik.contains("&amp;") && wynik.contains("©"), "{wynik}");
     }
 }
 
